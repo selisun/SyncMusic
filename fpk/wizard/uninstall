@@ -1,0 +1,27 @@
+[
+    {
+        "stepTitle": "数据保留方式",
+        "items": [
+            {
+                "type": "tips",
+                "helpText": "选择「保留数据」后重新安装可继续使用原有配置，无需重新填写；选择「彻底删除」会清空应用数据目录与运行日志。"
+            },
+            {
+                "type": "radio",
+                "field": "keep_data",
+                "label": "应用数据（Navidrome / 飞牛连接配置、歌单匹配记录）",
+                "initValue": "yes",
+                "options": [
+                    {
+                        "label": "保留数据（推荐，重装后配置自动复用）",
+                        "value": "yes"
+                    },
+                    {
+                        "label": "彻底删除全部数据（配置、日志一并清除）",
+                        "value": "no"
+                    }
+                ]
+            }
+        ]
+    }
+]

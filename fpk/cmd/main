@@ -1,0 +1,89 @@
+#!/bin/bash
+set -e
+if [ -n "${TRIM_APPDEST:-}" ] && [ -d "${TRIM_APPDEST}/SyncMusic" ]; then
+  APP_DIR="${TRIM_APPDEST}/SyncMusic"
+else
+  APP_DIR="$(cd "$(dirname "$0")/../app/SyncMusic" && pwd)"
+fi
+DATA_DIR="${TRIM_PKGVAR:-/var/packages/SyncMusic/var}"
+PORT="${TRIM_SERVICE_PORT:-8879}"
+PID_FILE="${DATA_DIR}/server.pid"
+LOG_FILE="${DATA_DIR}/server.log"
+LOG_MAX_BYTES=1048576
+mkdir -p "$DATA_DIR"
+is_running() {
+  if [ -f "$PID_FILE" ]; then
+    PID="$(cat "$PID_FILE")"
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+      return 0
+    fi
+  fi
+  return 1
+}
+case "${1:-}" in
+  start)
+    if is_running; then
+      exit 0
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "需要系统自带的 python3，但未找到。" >&2
+      [ -n "${TRIM_TEMP_LOGFILE:-}" ] && echo "需要系统自带的 python3，但未找到。" >> "$TRIM_TEMP_LOGFILE"
+      exit 1
+    fi
+    # 简单的日志轮转：超过 1MB 时保留一份旧日志
+    if [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE")" -gt "$LOG_MAX_BYTES" ]; then
+      mv -f "$LOG_FILE" "$LOG_FILE.1"
+    fi
+    cd "$APP_DIR"
+    # 访问入口只有统一网关：监听 ${TRIM_APPDEST}/app.sock，由 fnOS 校验登录态后转发。
+    # 另外仅在 127.0.0.1 上监听 service_port 供应用中心做状态探测，不对局域网暴露。
+    if [ -n "${TRIM_APPDEST:-}" ]; then
+      LAUNCH_ARGS="--unix-socket ${TRIM_APPDEST}/app.sock --base-path /app/SyncMusic --host 127.0.0.1 --port $PORT"
+    else
+      LAUNCH_ARGS="--host 0.0.0.0 --port $PORT"
+    fi
+    nohup python3 "$APP_DIR/app.py" $LAUNCH_ARGS --data-dir "$DATA_DIR" --no-browser \
+      >> "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    sleep 1
+    if ! is_running; then
+      echo "服务启动失败，请查看日志 $LOG_FILE" >&2
+      [ -n "${TRIM_TEMP_LOGFILE:-}" ] && tail -n 20 "$LOG_FILE" >> "$TRIM_TEMP_LOGFILE"
+      rm -f "$PID_FILE"
+      exit 1
+    fi
+    ;;
+  stop)
+    if is_running; then
+      PID="$(cat "$PID_FILE")"
+      kill "$PID" 2>/dev/null || true
+      for _ in 1 2 3 4 5; do
+        if ! kill -0 "$PID" 2>/dev/null; then
+          break
+        fi
+        sleep 1
+      done
+      # 5 秒内没有退出才强制结束，避免误杀已复用该 PID 的其他进程
+      if kill -0 "$PID" 2>/dev/null; then
+        kill -9 "$PID" 2>/dev/null || true
+      fi
+    fi
+    # 兜底：按命令行匹配杀掉残余进程（PID 文件丢失时防止进程拖住卸载流程）
+    pkill -f "python3 ${APP_DIR}/app.py" 2>/dev/null || true
+    rm -f "$PID_FILE"
+    if [ -n "${TRIM_APPDEST:-}" ]; then
+      rm -f "${TRIM_APPDEST}/app.sock"
+    fi
+    ;;
+  status)
+    if is_running; then
+      exit 0
+    fi
+    exit 3
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+# start/stop 正常结束一律 exit 0：任何非 0 都会被系统视为脚本失败而中止卸载/安装流程
+exit 0

@@ -1,0 +1,1520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<title>音纽</title>
+<script>
+/* 主题：默认跟随系统，可手动切 light/dark/auto（存 localStorage） */
+(function () {
+  var pref = "auto";
+  try { pref = localStorage.getItem("synctune-theme") || "auto"; } catch (e) {}
+  var dark = pref === "dark" || (pref === "auto" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  document.documentElement.setAttribute("data-theme-pref", pref);
+})();
+</script>
+<style>
+/* ============================================================================
+   音纽 SyncTune / fnOS fpk 界面布局设计稿  v2「分步工作台」
+   ----------------------------------------------------------------------------
+   与 v1 的区别：只重排空间结构，字体/品牌标记沿用。
+   v3 追加：底层配色改中性，v1/v2 的墨绿底无产品依据且消耗了状态色。
+   v1 的问题：四个区块仍自上而下堆成长页，在高度受限的 fpk 窗口里滚得更多。
+   v2 的骨架：页面本身 100vh 不滚动；只显示当前一步；每步内容区内部独立滚动；
+              底部操作条常驻；主区始终留给匹配表。
+
+   静态布局提案：单文件、原生 HTML/CSS/JS、零外链、零构建、零后端请求。
+   历史代码（D:\音纽\web\index.html、fpk/）未做任何修改，本文件不接 /api/* 接口。
+   表单与主要按钮 id 沿用现有命名；分步结构下原「步骤容器」类 id（step3Card /
+   starredCard 等）不再保留，真正改版落地时需按新结构重新映射。
+   ========================================================================== */
+
+/* ---------- 1. 设计令牌 ------------------------------------------------------
+   配色决策（v4）：暗色与亮色分开判断，不再把同一偏好套到两套主题上。
+   v3 的错误：把「亮色要暖、不刺眼」直接套到暗色，得到褐调近黑 #14120f。
+   暗部带褐在低亮度下会发浑、发脏，连正文都跟着泛米黄，长时间读表更累。
+   v4：暗色底层一律中性无彩（或极轻冷/暖偏），正文用中性白；亮色改为
+   白色系但不刺眼（底色 ~94%、卡片 ~98%，不用纯 #fff），去掉 v3 的米黄。
+   状态色不随底色漂移（四套暗色共用同一组），只占小面积：--accent 做
+   成功/已连接/当前步，--signal 做主操作/支线/风险；--ui 承担纯装饰强调。
+   四套暗色可用顶栏「配色」浮层实时切换比较，选定后固化。
+   -------------------------------------------------------------------------- */
+:root {
+  /* 默认暗色 = 石墨：R/G/B 差值 ≤2，肉眼无色相 */
+  --bg:            #171819;
+  --surface:       #1e2022;
+  --surface-2:     #25282a;
+  --surface-3:     #2e3134;
+  --line:          #33373a;
+  --line-strong:   #4b5156;
+  --text:          #e9eaec;
+  --muted:         #a7adb5;
+  --faint:         #848b93;
+  --ui:            #d2d6da;
+  /* 状态色：四套暗色共用，语义不随底色变化 */
+  --accent:        #8fc09a;  /* 成功 · 已连接 · 当前步 · 匹配成功 */
+  --accent-ink:    #10231a;
+  --accent-wash:   rgba(143, 192, 154, .12);
+  --signal:        #d9a25c;  /* 主操作 · 支线 · 风险 */
+  --signal-ink:    #2a1c08;
+  --signal-wash:   rgba(217, 162, 92, .12);
+  --warn:          #c99a4e;
+  --bad:           #d98a76;
+  --bad-wash:      rgba(217, 138, 118, .12);
+  --fs-0: 11px; --fs-1: 12px; --fs-2: 13px; --fs-3: 15px;
+  --fs-4: 18px; --fs-5: 23px; --fs-6: 29px; --fs-7: 44px;
+  --font-cn: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", "IBM Plex Mono", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+  --r-sm: 4px; --r-md: 8px; --r-lg: 12px; --r-xl: 18px;
+  --sh-1: 0 2px 8px rgba(0, 0, 0, .32);
+  --sh-2: 0 8px 28px rgba(0, 0, 0, .44);
+  --sh-3: 0 24px 64px rgba(0, 0, 0, .56);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --d-fast: 160ms; --d-base: 320ms; --d-slow: 640ms;
+  --rail-w: 208px; --topbar-h: 52px; --action-h: 68px;
+}
+[data-theme="light"] {
+  /* 白色系但不刺眼：去掉 v3 的米黄，底色 ~94%、卡片 ~98%，始终不用纯 #fff。
+     只留极轻暖（R/G/B 差值 ≤2），保证读起来是「白」而不是「米色」或冷灰。 */
+  --bg:            #f0f0ee;
+  --surface:       #faf9f7;
+  --surface-2:     #f4f3f1;
+  --surface-3:     #e9e8e5;
+  --line:          #deddd9;
+  --line-strong:   #c1c0bb;
+  --text:          #23262a;
+  --muted:         #5a6066;
+  --faint:         #767c81;
+  --ui:            #3d444a;
+  --accent:        #4f7242;
+  --accent-ink:    #ffffff;
+  --accent-wash:   rgba(79, 114, 66, .09);
+  --signal:        #96661f;
+  --signal-ink:    #fffaf2;
+  --signal-wash:   rgba(150, 102, 31, .09);
+  --warn:          #8a6516;
+  --bad:           #a4503f;
+  --bad-wash:      rgba(164, 80, 63, .09);
+  --sh-1: 0 2px 8px rgba(24, 28, 32, .07);
+  --sh-2: 0 8px 28px rgba(24, 28, 32, .11);
+  --sh-3: 0 24px 64px rgba(24, 28, 32, .16);
+}
+
+/* ---------- 1b. 暗色方案（顶栏「配色」浮层实时切换） ------------------------
+   只覆盖底层与文字，不碰状态色：换底色不该改变「绿=成功」的语义。
+   graphite 为 :root 默认值，无需重复声明。
+   -------------------------------------------------------------------------- */
+[data-theme="dark"][data-dark="ink"] {
+  --bg:#0d0e0f; --surface:#151617; --surface-2:#1c1e20; --surface-3:#242628;
+  --line:#282b2d; --line-strong:#3d4144;
+  --text:#dcdfe1; --muted:#92999f; --faint:#717980; --ui:#c4c9cd;
+}
+[data-theme="dark"][data-dark="slate"] {
+  --bg:#12171c; --surface:#192027; --surface-2:#202932; --surface-3:#293440;
+  --line:#2e3944; --line-strong:#465564;
+  --text:#e6ecf2; --muted:#9dabba; --faint:#7c8b9a; --ui:#c9d6e2;
+}
+[data-theme="dark"][data-dark="charcoal"] {
+  --bg:#181715; --surface:#201e1b; --surface-2:#272420; --surface-3:#302c27;
+  --line:#35312b; --line-strong:#4b453c;
+  --text:#eceae6; --muted:#a8a49c; --faint:#858079; --ui:#d5d0c8;
+}
+
+/* ---------- 2. 基础层 ------------------------------------------------------ */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--font-cn); font-size: var(--fs-3);
+  line-height: 1.7; letter-spacing: .01em;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;              /* ★ 页面本身不滚动，这是 v2 的核心 */
+}
+h1, h2, h3, h4, p { margin: 0; }
+a { color: inherit; text-decoration: none; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; border-radius: var(--r-sm); }
+::selection { background: var(--signal); color: var(--signal-ink); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+.scroll { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+.scroll::-webkit-scrollbar-track { background: transparent; }
+/* 内容不足一屏时用 auto margin 垂直居中；内容超出时自动退化为正常滚动，不裁切 */
+.scroll-center { display: flex; flex-direction: column; }
+.scroll-center > .connect-wrap { margin-block: 0 auto; }
+
+.grain {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.glow {
+  position: fixed; inset: 0 0 auto 0; height: 420px; z-index: 0; pointer-events: none;
+  /* 只做极弱的中性顶部提亮，不再给整屏铺绿色/琥珀色光晕 */
+  background: radial-gradient(42rem 20rem at 18% -14%, rgba(255,255,255,.018), transparent 68%);
+}
+
+/* ---------- 3. 应用骨架：轨道 / 顶栏 / 步骤头 / 工作区 / 操作条 ------------- */
+.app {
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  height: 100vh; height: 100dvh; max-width: 2200px; margin: 0 auto;
+}
+
+.rail {
+  min-height: 0; display: flex; flex-direction: column;
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%);
+  overflow: hidden;
+}
+.rail-brand { display: flex; align-items: center; gap: 10px; padding: 0 var(--sp-2) var(--sp-4); }
+.rail-brand svg { flex: none; }
+.rail-brand .wordmark { font-size: var(--fs-1); letter-spacing: .22em; text-transform: uppercase; color: var(--faint); font-family: var(--font-mono); }
+.rail-caption { padding: 0 var(--sp-2); margin-bottom: var(--sp-4); font-family: var(--font-mono); font-size: var(--fs-0); letter-spacing: .16em; color: var(--faint); text-transform: uppercase; }
+
+.steps { position: relative; display: flex; flex-direction: column; gap: 2px; }
+/* 步骤之间的连接竖线已移除：圆点自带状态（数字 / ✓ / 当前高亮），线条反而干扰阅读 */
+.step {
+  position: relative; z-index: 1; display: flex; align-items: center; gap: var(--sp-3);
+  min-height: 46px; width: 100%; padding: var(--sp-2) var(--sp-3); text-align: left;
+  border: 1px solid transparent; border-radius: var(--r-md); background: transparent;
+  color: var(--muted); transition: background var(--d-fast), color var(--d-fast), border-color var(--d-fast);
+}
+.step:hover { background: var(--surface-2); color: var(--text); }
+.step.is-active { background: var(--surface-2); border-color: var(--line); color: var(--text); }
+.step-index {
+  flex: none; width: 30px; height: 30px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--bg); border: 1px solid var(--line-strong);
+  font-family: var(--font-mono); font-size: var(--fs-1); font-weight: 700; color: var(--faint);
+  transition: all var(--d-base) var(--ease);
+}
+.step.is-active .step-index { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.step.is-done .step-index { background: var(--accent-wash); border-color: var(--accent); color: var(--accent); }
+.step-text { font-size: var(--fs-2); font-weight: 600; letter-spacing: .02em; }
+.step-dot { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); flex: none; }
+.step.is-active .step-dot { background: var(--signal); box-shadow: 0 0 8px var(--signal); }
+.branch-rule { display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-4) 0 var(--sp-2) var(--sp-3); color: var(--faint); font-family: var(--font-mono); font-size: var(--fs-0); letter-spacing: .14em; text-transform: uppercase; }
+.branch-rule::after { content: ""; flex: 1; height: 1px; background: repeating-linear-gradient(90deg, var(--signal) 0 4px, transparent 4px 8px); }
+.step-star .step-index { color: var(--signal); border-color: var(--signal); }
+
+.rail-foot { margin-top: auto; padding-top: var(--sp-4); }
+.rail-toggle { width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: center; gap: var(--sp-2); margin-bottom: var(--sp-3); background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: var(--r-md); font-size: var(--fs-1); letter-spacing: .06em; transition: border-color var(--d-fast), color var(--d-fast), background var(--d-fast); }
+.rail-toggle:hover { border-color: var(--line-strong); color: var(--text); background: var(--surface-2); }
+.rail-toggle svg { flex: none; }
+
+/* 收起态：只留图标，宽度收到 64px */
+.app.rail-mini { --rail-w: 64px; }
+.app.rail-mini .rail { padding-left: var(--sp-2); padding-right: var(--sp-2); }
+.app.rail-mini .wordmark,
+.app.rail-mini .rail-caption,
+.app.rail-mini .step-text,
+.app.rail-mini .step-dot,
+.app.rail-mini .rail-toggle span,
+.app.rail-mini .rail-tip span,
+.app.rail-mini .theme-toggle span,
+.app.rail-mini .branch-rule { display: none; }
+.app.rail-mini .rail-brand { justify-content: center; padding-left: 0; padding-right: 0; }
+.app.rail-mini .step { justify-content: center; gap: 0; padding: var(--sp-2) 0; }
+.theme-toggle { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: var(--sp-2); background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: var(--r-md); font-size: var(--fs-1); letter-spacing: .06em; transition: border-color var(--d-fast), color var(--d-fast), background var(--d-fast); }
+.theme-toggle:hover { border-color: var(--line-strong); color: var(--text); background: var(--surface-2); }
+.rail-tip { width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: center; gap: var(--sp-2); margin-bottom: var(--sp-3); background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: var(--r-md); font-size: var(--fs-1); letter-spacing: .06em; transition: border-color var(--d-fast), color var(--d-fast), background var(--d-fast); }
+.rail-tip:hover, .rail-tip.is-active { border-color: var(--signal); color: var(--signal); background: var(--signal-wash); }
+.rail-tip svg { flex: none; }
+
+/* 赞赏弹层 */
+.modal { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: var(--sp-4); }
+.modal[hidden] { display: none; }
+.modal-mask { position: absolute; inset: 0; background: rgba(6, 8, 10, .64); backdrop-filter: blur(3px); }
+.modal-card { position: relative; width: min(380px, 100%); max-height: calc(100vh - 2 * var(--sp-4)); overflow-y: auto; overflow-x: hidden; scrollbar-width: none; -ms-overflow-style: none; padding: var(--sp-5) var(--sp-5) var(--sp-4); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: 0 24px 60px rgba(0, 0, 0, .45); text-align: center; }
+.modal-card::-webkit-scrollbar { width: 0; height: 0; }
+.modal-x { position: absolute; top: var(--sp-2); right: var(--sp-2); width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--faint); font-size: 18px; line-height: 1; cursor: pointer; }
+.modal-x:hover { color: var(--text); background: var(--surface-2); }
+.tip-title { font-size: var(--fs-4); font-weight: 700; color: var(--text); margin-bottom: var(--sp-2); }
+.tip-copy { margin: 0 0 var(--sp-3); font-size: var(--fs-2); line-height: 1.7; color: var(--muted); }
+.tip-note { margin: 0 0 var(--sp-3); font-size: var(--fs-1); color: var(--faint); }
+.tip-fine { margin: var(--sp-2) 0 0; font-size: var(--fs-0); line-height: 1.55; color: var(--faint); }
+
+/* 赞赏页（整页：左文字 / 右赞赏码） */
+.scroll-tip { padding-block: var(--sp-5); }
+.tip-page { max-width: 820px; margin: 0 auto; display: flex; align-items: center; gap: var(--sp-6); }
+.tip-main { flex: 1; min-width: 0; }
+.tip-code { flex: none; text-align: center; }
+.tip-qr-lg { width: min(380px, 52vh); height: auto; aspect-ratio: 1 / 1; display: block; border: 1px solid var(--line); border-radius: var(--r-sm); background: #fff; }
+.tip-code .tip-note { margin: var(--sp-2) 0 0; }
+@media (max-width: 720px) {
+  .tip-page { flex-direction: column; align-items: stretch; gap: var(--sp-4); text-align: center; }
+  .tip-page .tip-copy { text-align: left; }
+  .tip-qr-lg { width: min(320px, 46vh); margin: 0 auto; }
+}
+
+/* 导入结果弹窗 */
+.done-icon { width: 46px; height: 46px; margin: 0 auto var(--sp-3); display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 22px; font-weight: 700; line-height: 1; }
+.done-icon.ok { color: var(--accent); background: var(--accent-wash); border: 1px solid var(--accent); }
+.done-icon.warn { color: var(--signal); background: var(--signal-wash); border: 1px solid var(--signal); }
+.done-copy { margin: 0 0 var(--sp-4); font-size: var(--fs-2); line-height: 1.7; color: var(--muted); }
+.done-copy b { color: var(--text); font-variant-numeric: tabular-nums; }
+.done-copy .err-list { display: block; margin-top: var(--sp-2); font-size: var(--fs-1); color: var(--bad); text-align: left; }
+.done-actions { display: flex; gap: var(--sp-2); }
+.done-actions .btn { flex: 1; }
+
+.main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+
+.draft-tag { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px dashed var(--signal); border-radius: 3px; color: var(--signal); font-size: var(--fs-0); letter-spacing: .12em; white-space: nowrap; }
+.led { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); flex: none; }
+.led.off { background: var(--line-strong); box-shadow: none; }
+
+/* 步骤头：编号 + 标题 + 一句说明 + 进度，常驻 */
+.stage-head {
+  flex: none; display: flex; align-items: center; gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.stage-num { font-family: var(--font-mono); font-size: var(--fs-6); font-weight: 700; letter-spacing: -.08em; color: var(--ui); line-height: 1; min-width: 56px; }
+.stage-head h1 { font-size: var(--fs-5); font-weight: 800; letter-spacing: -.03em; line-height: 1.2; }
+.stage-head .lede { font-size: var(--fs-2); color: var(--muted); }
+.stage-head.is-branch .stage-num { color: var(--signal); }
+
+/* 工作区：一次只显示一步，高度锁死，内部滚动 */
+.stage { flex: 1; min-height: 0; overflow: hidden; padding: 0 var(--sp-5); }
+.view { display: none; flex-direction: column; height: 100%; min-height: 0; }
+.view.is-current { display: flex; }
+.view-head { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-3) 0; }
+.view-head .grow { flex: 1; }
+.view-head .count { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--muted); }
+.view-foot { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-3) 0; border-top: 1px solid var(--line); font-size: var(--fs-1); color: var(--muted); }
+
+/* 底部操作条：常驻，不随内容滚动 */
+.actionbar {
+  flex: none; min-height: var(--action-h); display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5); border-top: 1px solid var(--line);
+  background: var(--surface); box-shadow: 0 -8px 24px rgba(0,0,0,.22);
+}
+.actionbar .grow { flex: 1; }
+.actionbar .hint { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--faint); }
+
+/* ---------- 4. 通用组件 ---------------------------------------------------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 8px 15px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: transparent; color: var(--text); font-size: var(--fs-2); font-weight: 600; letter-spacing: .02em; white-space: nowrap; transition: border-color var(--d-fast), color var(--d-fast), background var(--d-fast), transform var(--d-fast); }
+.btn:hover { border-color: var(--line-strong); color: var(--text); background: var(--surface-2); }
+.btn:active { transform: translateY(1px) scale(.985); }
+.btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+/* 主操作统一琥珀：绿色彻底退出按钮，只留给状态位 */
+.btn.primary { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); }
+.btn.primary:hover { background: var(--text); border-color: var(--text); color: var(--bg); }
+.btn.signal { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); }
+.btn.signal:hover, .btn.primary:hover { filter: brightness(1.12); color: var(--signal-ink); }
+.btn.sm { min-height: 32px; padding: 4px 11px; font-size: var(--fs-1); border-radius: var(--r-sm); }
+@media (pointer: coarse) { .btn.sm { min-height: 44px; } }
+.chip { padding: 2px 9px; border-radius: 100px; border: 1px solid var(--line-strong); font-size: var(--fs-0); letter-spacing: .06em; color: var(--muted); white-space: nowrap; }
+.chip.signal { color: var(--signal); border-color: var(--signal); background: var(--signal-wash); }
+.chip.accent { color: var(--accent); border-color: var(--accent); background: var(--accent-wash); }
+.field { margin-bottom: var(--sp-3); }
+.field label { display: block; font-size: var(--fs-1); color: var(--muted); margin-bottom: 5px; letter-spacing: .03em; }
+.field input[type="text"], .field input[type="password"], .field input[type="number"] { width: 100%; min-height: 40px; padding: 8px 11px; color: var(--text); background: var(--bg); border: 1px solid var(--line-strong); border-radius: var(--r-md); font-family: var(--font-mono); font-size: var(--fs-2); transition: border-color var(--d-fast), box-shadow var(--d-fast), background var(--d-fast); }
+.field input::placeholder { color: var(--faint); opacity: .8; }
+.field input:hover { border-color: var(--line-strong); }
+.field input:focus { outline: none; border-color: var(--signal); background: var(--surface); box-shadow: 0 0 0 3px var(--signal-wash); }
+.field .hint { font-size: var(--fs-0); color: var(--faint); margin-top: 4px; }
+.field-note { font-size: var(--fs-0); color: var(--faint); line-height: 1.5; margin: -6px 0 var(--sp-3); }
+.remember { display: flex; align-items: flex-start; gap: var(--sp-2); min-height: 44px; padding: var(--sp-2) 0; font-size: var(--fs-1); color: var(--muted); line-height: 1.55; }
+.remember input { margin: 3px 0 0; width: 16px; height: 16px; accent-color: var(--accent); flex: none; }
+.remember em { color: var(--signal); font-style: normal; }
+.status-line { display: flex; align-items: center; gap: 7px; min-height: 20px; font-size: var(--fs-1); color: var(--muted); font-family: var(--font-mono); }
+.status-line.ok { color: var(--accent); }
+.status-line.err { color: var(--bad); }
+.status-line.busy { color: var(--signal); }
+.panel { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--sh-1); }
+.panel-pad { padding: var(--sp-4); }
+
+/* ---------- 5. 步骤 01：连接设置（A→B 双联，压缩到一屏） ------------------ */
+.connect-wrap { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-2) 0 var(--sp-3); }
+.linkup { display: grid; grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr); align-items: stretch; }
+.endpoint { min-width: 0; padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
+.endpoint-head { display: flex; align-items: baseline; gap: var(--sp-2); padding-bottom: var(--sp-3); margin-bottom: var(--sp-3); border-bottom: 1px solid var(--line); }
+.endpoint-head .role { font-family: var(--font-mono); font-size: var(--fs-0); letter-spacing: .18em; color: var(--ui); text-transform: uppercase; }
+.endpoint-head .service { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-1); color: var(--faint); }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.bridge { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-2); color: var(--ui); }
+.bridge span { font-family: var(--font-mono); font-size: var(--fs-0); letter-spacing: .1em; color: var(--faint); writing-mode: vertical-rl; }
+.endpoint-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); }
+.adv { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
+.adv summary { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; padding: 0 var(--sp-4); cursor: pointer; list-style: none; font-size: var(--fs-2); color: var(--muted); }
+.adv summary::-webkit-details-marker { display: none; }
+.adv summary::before { content: "+"; font-family: var(--font-mono); font-size: var(--fs-3); color: var(--ui); width: 18px; text-align: center; }
+.adv[open] summary::before { content: "−"; }
+.adv summary:hover { color: var(--text); }
+.adv-inner { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--sp-2) var(--sp-5); padding: var(--sp-2) var(--sp-4) var(--sp-4); border-top: 1px solid var(--line); }
+.safety-strip { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-left: 2px solid var(--accent); border-radius: 0 var(--r-md) var(--r-md) 0; background: var(--surface-2); font-size: var(--fs-2); font-weight: 600; }
+.safety-strip svg { color: var(--accent); flex: none; }
+
+/* ---------- 6. 步骤 02：选择歌单（网格填满工作区） ------------------------ */
+.pl-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); align-content: start; padding-bottom: var(--sp-3); }
+.pl-item { display: flex; align-items: center; gap: var(--sp-3); min-height: 64px; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); cursor: pointer; transition: border-color var(--d-fast), background var(--d-fast), transform var(--d-fast); }
+.pl-item:hover { border-color: var(--line-strong); background: var(--surface-2); transform: translateX(2px); }
+.pl-item:has(input:checked), .pl-item.is-checked { border-color: var(--accent); background: var(--accent-wash); }
+.pl-item:focus-within { outline: 2px solid var(--signal); outline-offset: 2px; }
+.pl-item input { width: 17px; height: 17px; accent-color: var(--accent); flex: none; }
+.pl-name { flex: 1; min-width: 0; font-size: var(--fs-2); font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pl-count { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--faint); flex: none; }
+
+/* ---------- 7. 步骤 03：匹配与导入（主区给表格，设置收进右栏） ------------- */
+.pl-tabs { flex: none; display: flex; gap: 2px; padding: var(--sp-3) 0 0; overflow-x: auto; }
+.pl-tabs button {
+  display: flex; align-items: center; gap: var(--sp-2); min-height: 42px; padding: 0 var(--sp-4);
+  border: 1px solid var(--line); border-bottom: none; border-radius: var(--r-md) var(--r-md) 0 0;
+  background: var(--surface-2); color: var(--muted); font-size: var(--fs-2); font-weight: 600; white-space: nowrap;
+  transition: background var(--d-fast), color var(--d-fast);
+}
+.pl-tabs button:hover { background: var(--surface-3); color: var(--text); }
+.pl-tabs button.is-active { background: var(--surface); color: var(--text); border-color: var(--line-strong); box-shadow: inset 0 2px 0 var(--accent); }
+.pl-tabs .tnum { font-family: var(--font-mono); font-size: var(--fs-0); color: var(--faint); }
+.pl-tabs button.is-active .tnum { color: var(--accent); }
+.match-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 252px; border: 1px solid var(--line-strong); border-radius: 0 var(--r-lg) var(--r-lg) var(--r-lg); background: var(--surface); overflow: hidden; }
+.match-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.match-side { min-width: 0; min-height: 0; overflow: auto; border-left: 1px solid var(--line); background: var(--surface-2); padding: var(--sp-4); }
+.pane { display: none; flex-direction: column; min-height: 0; height: 100%; }
+.pane.is-active { display: flex; }
+.rename-row { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); }
+.rename-row span { font-size: var(--fs-1); color: var(--muted); }
+.rename-row input { flex: 1; min-width: 140px; max-width: 300px; min-height: 36px; padding: 6px 10px; background: var(--bg); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--r-sm); font-size: var(--fs-2); }
+.rename-row input:focus { outline: none; border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-wash); }
+.table-scroll { flex: 1; min-height: 0; overflow: auto; }
+table.match { width: 100%; min-width: 520px; border-collapse: collapse; table-layout: fixed; font-size: var(--fs-2); }
+table.match th { position: sticky; top: 0; z-index: 2; text-align: left; padding: 9px var(--sp-3); background: var(--surface-3); border-bottom: 1px solid var(--line); font-family: var(--font-mono); font-size: var(--fs-0); font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+table.match td { padding: 9px var(--sp-3); border-bottom: 1px solid var(--line); vertical-align: middle; }
+table.match tbody tr:hover { background: var(--surface-2); }
+table.match tr.is-off td { color: var(--faint); background: var(--surface-2); }
+table.match tr.is-off .cell-main { opacity: .65; }
+table.match input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+table.match th:first-child, table.match td:first-child { width: 42px; }
+table.match th:nth-child(2), table.match td:nth-child(2) { width: 31%; }
+table.match th:nth-child(3), table.match td:nth-child(3) { width: 31%; }
+.cell-main { font-weight: 600; }
+.cell-sub { font-size: var(--fs-0); color: var(--faint); font-family: var(--font-mono); margin-top: 2px; }
+.clip { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.conf { display: flex; align-items: center; gap: var(--sp-2); }
+.conf .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--fs-1); font-weight: 700; width: 32px; flex: none; }
+.conf .track { width: 60px; flex: none; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.conf .track i { display: block; height: 100%; border-radius: 2px; }
+.conf.high .num { color: var(--accent); } .conf.high .track i { background: var(--accent); }
+.conf.mid .num { color: var(--warn); } .conf.mid .track i { background: var(--warn); }
+.conf.none .num { color: var(--faint); } .conf.none .track i { background: var(--line-strong); }
+.conf .label { font-size: var(--fs-0); color: var(--muted); white-space: nowrap; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 100px; font-size: var(--fs-0); font-weight: 600; white-space: nowrap; border: 1px solid var(--line-strong); color: var(--muted); }
+.badge.high { color: var(--accent); border-color: var(--accent); background: var(--accent-wash); }
+.badge.none { color: var(--faint); }
+.badge.dup { color: var(--signal); border-color: var(--signal); background: var(--signal-wash); }
+
+.side-block { margin-bottom: var(--sp-3); }
+.side-block:last-child { margin-bottom: 0; }
+.side-block > .cap { font-family: var(--font-mono); font-size: var(--fs-0); letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin-bottom: var(--sp-2); }
+.side-block > .cap-lg { font-family: var(--font-cn); font-size: var(--fs-3); font-weight: 700; letter-spacing: .02em; text-transform: none; color: var(--text); }
+.dup-grid { display: grid; gap: 6px; }
+.dup-opt { display: block; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); cursor: pointer; transition: border-color var(--d-fast), background var(--d-fast); }
+.dup-opt:hover { border-color: var(--line-strong); }
+.dup-opt:has(input:checked), .dup-opt.is-checked { border-color: var(--accent); background: var(--accent-wash); }
+.dup-opt:has(input[value="overwrite"]:checked), .dup-opt.is-risk { border-color: var(--signal); background: var(--signal-wash); }
+.dup-opt:focus-within { outline: 2px solid var(--signal); outline-offset: 2px; }
+.dup-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.dup-opt .t { display: flex; align-items: center; gap: 6px; font-size: var(--fs-2); font-weight: 700; }
+.dup-opt .t::before { content: ""; width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--line-strong); flex: none; }
+.dup-opt:has(input:checked) .t::before, .dup-opt.is-checked .t::before { border: 3px solid var(--accent); }
+.dup-opt:has(input[value="overwrite"]:checked) .t::before, .dup-opt.is-risk .t::before { border-color: var(--signal); }
+.dup-opt .d { font-size: var(--fs-0); color: var(--muted); line-height: 1.6; }
+.risk-note { display: none; margin-top: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--signal); border-radius: var(--r-md); background: var(--signal-wash); color: var(--text); font-size: var(--fs-0); line-height: 1.7; }
+.risk-note.show { display: block; }
+.dist-row { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: 6px; font-family: var(--font-mono); font-size: var(--fs-1); color: var(--muted); }
+.dist-row .k { width: 52px; flex: none; }
+.dist-row .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.dist-row .bar i { display: block; height: 100%; }
+.dist-row .v { width: 40px; text-align: right; color: var(--text); }
+.log { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); font-family: var(--font-mono); font-size: var(--fs-0); line-height: 1.7; max-height: 104px; overflow: auto; white-space: pre-wrap; }
+.log .ok { color: var(--accent); } .log .err { color: var(--bad); } .log .dim { color: var(--faint); }
+.scroll-log { padding-block: var(--sp-4); }
+.log.log-full { max-height: none; overflow: visible; min-height: 240px; font-size: var(--fs-1); line-height: 1.85; }
+
+/* ---------- 8. 步骤 04：收藏导入（统计在顶栏，表格占满剩余高度） ----------- */
+.stage-stats { display: flex; align-items: baseline; gap: var(--sp-4); margin-left: auto; }
+.stage-stats[hidden] { display: none; }
+.stat-mini { font-family: var(--font-mono); font-size: var(--fs-0); color: var(--muted); white-space: nowrap; letter-spacing: .04em; }
+.stat-mini b { font-size: var(--fs-3); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; margin: 0 2px; }
+.stat-mini.add b { color: var(--accent); } .stat-mini.fail b { color: var(--bad); }
+.star-table-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
+
+/* ---------- 9. 弹窗 -------------------------------------------------------- */
+dialog { width: min(520px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line-strong); border-radius: var(--r-xl); background: var(--surface); color: var(--text); box-shadow: var(--sh-3); }
+dialog::backdrop { background: rgba(0, 0, 0, .62); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+
+/* ---------- 配色方案浮层（设计稿专用：并排比较四套暗色） -------------------- */
+.palette-pop {
+  position: fixed; z-index: 60; top: calc(var(--topbar-h) + 8px); right: var(--sp-4);
+  width: min(448px, calc(100vw - 24px));
+  max-height: calc(100vh - var(--topbar-h) - var(--action-h) - 20px); overflow: auto;
+  padding: var(--sp-3); border: 1px solid var(--line-strong); border-radius: var(--r-lg);
+  background: var(--surface); color: var(--text); box-shadow: var(--sh-3);
+  font-family: var(--font-cn);
+}
+.palette-pop[hidden] { display: none; }
+.pop-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: 6px; }
+.pop-head h2 { font-size: var(--fs-3); font-weight: 800; letter-spacing: -.01em; }
+.pop-head .tag { font-family: var(--font-mono); font-size: var(--fs-0); letter-spacing: .12em; color: var(--signal); border: 1px solid var(--signal); border-radius: 3px; padding: 1px 6px; }
+.pop-note { font-size: var(--fs-1); color: var(--muted); line-height: 1.6; margin-bottom: var(--sp-2); }
+.sw-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+.sw {
+  display: block; width: 100%; text-align: left; padding: var(--sp-2);
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface-2); color: var(--text); cursor: pointer;
+  font-family: var(--font-cn); transition: border-color var(--d-fast) var(--ease), background var(--d-fast) var(--ease);
+}
+.sw:hover { border-color: var(--ui); background: var(--surface-3); }
+.sw[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-wash); }
+.sw-preview { display: block; height: 60px; padding: 7px; margin-bottom: 6px; border: 1px solid var(--p-line); border-radius: var(--r-sm); background: var(--p-bg); overflow: hidden; }
+.sw-topline { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+.sw-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--p-accent); flex: none; }
+.sw-txt { display: block; height: 4px; width: 62%; border-radius: 2px; background: var(--p-text); opacity: .82; }
+.sw-card { display: block; padding: 7px; border: 1px solid var(--p-line); border-radius: 3px; background: var(--p-card); }
+.sw-line { display: block; height: 3px; border-radius: 2px; background: var(--p-muted); opacity: .55; margin-bottom: 4px; }
+.sw-line.short { width: 48%; }
+.sw-btn { display: inline-block; width: 32px; height: 8px; border-radius: 3px; background: var(--p-signal); margin-top: 2px; }
+.sw-name { display: flex; align-items: center; gap: 6px; font-size: var(--fs-2); font-weight: 700; }
+.sw-name em { font-style: normal; font-size: var(--fs-0); font-weight: 600; color: var(--accent); }
+.sw-desc { display: block; font-size: var(--fs-0); color: var(--muted); line-height: 1.5; margin-top: 3px; }
+.pop-foot { margin-top: var(--sp-2); padding-top: var(--sp-2); border-top: 1px solid var(--line); font-size: var(--fs-0); color: var(--faint); line-height: 1.55; }
+.dlg-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); }
+.dlg-head h2 { font-size: var(--fs-4); font-weight: 700; }
+.dlg-body { padding: var(--sp-5); }
+.dlg-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-5); }
+.dlg-note { margin-top: var(--sp-3); padding: var(--sp-3); border-left: 2px solid var(--line-strong); background: var(--surface-2); font-size: var(--fs-1); color: var(--muted); line-height: 1.7; }
+
+/* ---------- 10. 动效：一次编排好的入场 + 步骤切换 -------------------------- */
+/* 动效规范：本稿不编入场序列。
+   工具型界面 + fnOS 内嵌浏览器（旧版 Chromium、可能被关闭动画）下，任何带 fill-mode 的
+   初始隐藏都可能把关键内容永久留在半透明帧 —— 实测 both / backwards 都会触发。
+   视觉层次完全由静态排版承担；动效只保留状态反馈（悬停、按压、tab 切换、轨道进度、
+   主题切换），全部走 transition，元素默认态即最终可见态，动画不参与「是否看得见」。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* ---------- 11. 响应式：fnOS 窄窗口与手机各有明确答案 ---------------------- */
+@media (max-width: 1100px) and (min-width: 721px) {
+  :root { --topbar-h: 48px; }
+  .stage-head, .actionbar { padding-left: var(--sp-4); padding-right: var(--sp-4); }
+  .stage { padding: 0 var(--sp-4); }
+  .match-split { grid-template-columns: minmax(0, 1fr) 216px; }
+  .pl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .field-row { grid-template-columns: 1fr; }
+  .linkup { grid-template-columns: minmax(0, 1fr) 48px minmax(0, 1fr); }
+  .conf .track { width: 44px; }
+}
+@media (max-width: 720px) {
+  html, body { height: auto; }
+  body { overflow: auto; }
+  .app { display: block; height: auto; min-height: 100vh; }
+  .rail { position: sticky; top: 0; z-index: 30; flex-direction: row; padding: var(--sp-2) var(--sp-3); border-right: none; border-bottom: 1px solid var(--line); background: var(--surface); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+  .rail-brand, .rail-caption, .rail-foot, .branch-rule, .step-dot, .step-text { display: none; }
+  .steps { flex-direction: row; justify-content: space-between; gap: 4px; width: 100%; }
+  .steps::before, .steps::after { display: none; }
+  .step { flex: 1; min-height: 40px; padding: 2px; justify-content: center; }
+  .step-index { width: 32px; height: 32px; }
+  .main { display: block; }
+  .stage-head { padding: var(--sp-4); }
+  .stage-head .lede { width: 100%; }
+  .stage { display: block; padding: 0 var(--sp-4) var(--sp-5); overflow: visible; }
+  .view { display: none; height: auto; }
+  .view.is-current { display: block; }
+  .scroll, .table-scroll, .match-main, .star-table-wrap { overflow: visible; }
+  .linkup { grid-template-columns: 1fr; gap: var(--sp-2); }
+  .bridge { flex-direction: row; height: 30px; }
+  .bridge svg { transform: rotate(90deg); }
+  .bridge span { writing-mode: horizontal-tb; }
+  .pl-grid, .field-row { grid-template-columns: 1fr; }
+  .match-split { display: block; border-radius: 0 0 var(--r-lg) var(--r-lg); }
+  .match-main { height: 420px; border-bottom: 1px solid var(--line); }
+  .table-scroll { height: 100%; overflow: auto; }
+  .match-side { border-left: none; overflow: visible; }
+  .star-table-wrap { height: 420px; overflow: auto; }
+  .actionbar { position: sticky; bottom: 0; z-index: 25; flex-wrap: wrap; padding: var(--sp-3) var(--sp-4); }
+  .actionbar .hint { width: 100%; order: 3; }
+}
+
+/* 900~1100 宽：两端面板各约 470px，用户名/密码并排放得下，不必堆成单列
+   （1100×600 的矮窗口里，单列会白吃一整行高度，把底部按钮顶出可视区） */
+@media (min-width: 900px) and (max-width: 1100px) {
+  .field-row { grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+}
+
+/* ---------- 11c. 窗口放大：宽度换信息密度，不是把内容拉成一条 -------------- */
+@media (min-width: 1500px) {
+  :root { --rail-w: 224px; }
+  .stage-head, .actionbar { padding-left: var(--sp-6); padding-right: var(--sp-6); }
+  .stage { padding: 0 var(--sp-6); }
+  .match-split { grid-template-columns: minmax(0, 1fr) 300px; }
+  .pl-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (min-width: 2000px) {
+  .match-split { grid-template-columns: minmax(0, 1fr) 340px; }
+  .pl-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+/* 窗口拉高后演示数据不足时，歌单网格垂直居中，避免上半屏一小块 + 下半屏空白 */
+@media (min-height: 900px) and (min-width: 721px) {
+  .view[data-view="s2"] .scroll { display: flex; flex-direction: column; }
+  .view[data-view="s2"] .pl-grid { flex: 1 0 auto; align-content: center; padding-bottom: 0; }
+}
+
+/* ---------- 11b. fpk 实拍窗口：约 1100×600 -------------------------------
+   飞牛应用窗口默认尺寸实测 1107×641（含系统标题栏），iframe 可用高度约 600。
+   常规外框 52 + 78 + 68 = 198px，工作区只剩约 400px，匹配表只露 5~6 行。
+   矮窗口模式只压缩非信息性占用（外框 padding、行高、字号），不动骨架与断点，
+   把约 60px 还给表格。放在最后以覆盖上面的断点变量。
+   -------------------------------------------------------------------------- */
+@media (max-height: 720px) and (min-width: 721px) {
+  :root { --topbar-h: 42px; --action-h: 54px; }
+  .stage-head { padding: var(--sp-2) var(--sp-4); gap: var(--sp-3); }
+  .stage-num { font-size: var(--fs-5); min-width: 46px; }
+  .stage-head h1 { font-size: var(--fs-4); }
+  .stage-head .lede { font-size: var(--fs-1); }
+  .stage { padding: 0 var(--sp-4); }
+  .view-head { padding: var(--sp-2) 0; }
+  .view-foot { padding: var(--sp-2) 0; }
+  .actionbar { padding: var(--sp-2) var(--sp-4); }
+  .actionbar .btn { min-height: 38px; }
+  .rename-row { padding: var(--sp-2) var(--sp-3); }
+  .rename-row input { min-height: 32px; }
+  table.match th { padding: 6px var(--sp-3); }
+  table.match td { padding: 6px var(--sp-3); }
+  .cell-sub { margin-top: 0; }
+  .match-side { padding: var(--sp-3); }
+  .side-block { margin-bottom: var(--sp-2); }
+  .log { max-height: 92px; }
+  .pl-item { min-height: 50px; }
+
+  /* 01 步：把 A→B 双联面板连同高级选项、安全提示压进一屏 */
+  .connect-wrap { gap: var(--sp-2); padding: var(--sp-1) 0 var(--sp-2); }
+  .endpoint { padding: var(--sp-3); }
+  .endpoint-head { padding-bottom: var(--sp-2); margin-bottom: var(--sp-2); }
+  .endpoint-foot { margin-top: 0; }
+  .endpoint-foot .btn { min-height: 34px; }
+  .field { margin-bottom: var(--sp-2); }
+  .field label { margin-bottom: 2px; }
+  .field input[type="text"], .field input[type="password"], .field input[type="number"] { min-height: 34px; padding: 5px 10px; }
+  .field-row { gap: var(--sp-2); }
+  .remember { min-height: 32px; padding: var(--sp-1) 0; }
+  .adv summary { min-height: 34px; }
+  .safety-strip { padding: var(--sp-2) var(--sp-3); font-size: var(--fs-1); }
+  /* 窄屏：03 步右栏的描述与分布收敛，避免占满高度 */
+  .dup-opt { padding: 5px 9px; }
+  .dup-opt .d { font-size: 10px; line-height: 1.45; }
+  .dist-row { margin-bottom: 4px; }
+}
+</style>
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+<div class="glow" aria-hidden="true"></div>
+
+<div class="app">
+
+  <!-- ===== 左：步骤轨道 ===== -->
+  <aside class="rail" aria-label="步骤导航">
+    <div class="rail-brand">
+      <img class="rail-logo" src="data:image/png;base64,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" alt="音纽" width="30" height="30">
+      <span class="wordmark">SyncMusic</span>
+    </div>
+    <div class="rail-caption">工作流 / Workflow</div>
+
+    <nav class="steps" id="steps" aria-label="主流程与支线">
+      <button class="step" type="button" data-target="s1" title="01 连接设置">
+        <span class="step-index"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.5 2.5v3M10.5 2.5v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M3.5 5.5h9V8a4.5 4.5 0 0 1-9 0V5.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 12.5V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="step-text">连接设置</span><span class="step-dot"></span>
+      </button>
+      <button class="step" type="button" data-target="s2" title="02 选择歌单">
+        <span class="step-index"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m2 4.6 1 1 1.8-1.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m2 9.6 1 1 1.8-1.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 4.5h6M8 9.5h6M8 13.5h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span><span class="step-text">选择歌单</span><span class="step-dot"></span>
+      </button>
+      <button class="step" type="button" data-target="s3" title="03 匹配与导入">
+        <span class="step-index"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="m5 6.5 3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 11v2.5h11V11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="step-text">匹配与导入</span><span class="step-dot"></span>
+      </button>
+      <button class="step" type="button" data-target="s5" title="导入日志">
+        <span class="step-index"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 2.5h5.2L12.5 5.8V13.5H4v-11Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6.2 7.2h4.1M6.2 9.6h4.1M6.2 12h2.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></span><span class="step-text">导入日志</span><span class="step-dot"></span>
+      </button>
+      <div class="branch-rule">支线 / Side</div>
+      <button class="step step-star" type="button" data-target="s4" title="收藏导入（独立功能，无需选歌单）">
+        <span class="step-index"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13.2C6.2 11.9 2.5 9.3 2.5 6.4A2.9 2.9 0 0 1 8 5.1a2.9 2.9 0 0 1 5.5 1.3c0 2.9-3.7 5.5-5.5 6.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span><span class="step-text">收藏导入</span><span class="step-dot"></span>
+      </button>
+    </nav>
+
+    <div class="rail-foot">
+      <button class="rail-tip" id="railTip" type="button" aria-label="赞赏支持" title="赞赏支持">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 5.6h8v4.2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V5.6Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M11 6.6h.8a1.9 1.9 0 0 1 0 3.8H11" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 2.2v1.5M8 2.2v1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <span>赞赏支持</span>
+      </button>
+      <button class="rail-toggle" id="railToggle" type="button" aria-label="收起侧栏" title="收起侧栏">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M6.2 3v10" stroke="currentColor" stroke-width="1.4"/></svg>
+        <span>收起侧栏</span>
+      </button>
+      <button class="theme-toggle" id="railTheme" type="button" aria-label="切换明暗主题">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="3.2" stroke="currentColor" stroke-width="1.4"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M13 3l-1.4 1.4M4.4 11.6 3 13" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        <span>切换明暗</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===== 右：顶栏 + 步骤头 + 单步工作区 + 操作条 ===== -->
+  <div class="main">
+
+    <div class="stage-head" id="stageHead">
+      <span class="stage-num" id="stageNum">01</span>
+      <div>
+        <h1 id="stageTitle">连接设置</h1>
+        <p class="lede" id="stageLede">填两端地址与账号，测试通过后保存。</p>
+      </div>
+      <div class="stage-stats" id="stageStats" hidden>
+        <span class="stat-mini add">新增 <b id="statAdded">0</b> 首</span>
+        <span class="stat-mini">跳过 <b id="statSkipped">0</b> 首</span>
+        <span class="stat-mini fail">失败 <b id="statFail">0</b> 首</span>
+      </div>
+    </div>
+
+    <main class="stage" id="stage">
+
+      <!-- ---------- 步骤 01 ---------- -->
+      <section class="view is-current" id="view-s1" data-view="s1" tabindex="-1">
+        <h2 class="sr-only">连接设置</h2>
+        <div class="scroll scroll-center">
+          <div class="connect-wrap">
+            <div class="linkup">
+              <div class="endpoint">
+                <div class="endpoint-head"><span class="role">A / 来源</span><span class="service">Navidrome</span></div>
+                <div class="field"><label for="ndUrl">服务地址</label><input type="text" id="ndUrl" placeholder="http://NAS的IP:4533"></div>
+                <div class="field-row">
+                  <div class="field"><label for="ndUser">用户名</label><input type="text" id="ndUser"></div>
+                  <div class="field"><label for="ndPass">密码</label><input type="password" id="ndPass" placeholder="留空则用已保存的密码"></div>
+                </div>
+                <div class="field-note">密码以密文保存在本机 config.json，重启应用后无需重新输入</div>
+                <div class="endpoint-foot"><button class="btn" id="btnNdTest" type="button">测试连接并读取歌单</button></div>
+                <div class="status-line" id="ndStatus"></div>
+              </div>
+
+              <div class="bridge" aria-hidden="true">
+                <svg width="50" height="32" viewBox="0 0 50 32" fill="none">
+                  <path d="M2 16h7l2-8 4 16 3-12 4 8 3-4h4l2-6 4 12 3-6h4" stroke="var(--ui)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="m43 11 5 5-5 5" stroke="var(--signal)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>匹配</span>
+              </div>
+
+              <div class="endpoint">
+                <div class="endpoint-head"><span class="role">B / 目标</span><span class="service">飞牛音乐</span></div>
+                <div class="field"><label for="fnUrl">服务地址</label><input type="text" id="fnUrl" placeholder="http://NAS的IP:5666/music"></div>
+                <div class="field-row">
+                  <div class="field"><label for="fnUser">用户名</label><input type="text" id="fnUser"></div>
+                  <div class="field"><label for="fnPass">密码</label><input type="password" id="fnPass" placeholder="留空则用已保存的密码"></div>
+                </div>
+                <div class="field-note">密码以密文保存在本机 config.json，重启应用后无需重新输入</div>
+                <div class="endpoint-foot"><button class="btn" id="btnFnTest" type="button">测试连接</button></div>
+                <div class="status-line" id="fnStatus"></div>
+              </div>
+            </div>
+
+            <details class="adv">
+              <summary>高级选项（一般不用动）</summary>
+              <div class="adv-inner">
+                <label class="remember" for="advAuthx"><input type="checkbox" id="advAuthx"><span>启用 authx 签名<span class="hint" style="display:block">服务端更新后接口要求签名时打开</span></span></label>
+                <label class="remember" for="advTls"><input type="checkbox" id="advTls"><span>忽略 HTTPS 证书校验<span class="hint" style="display:block">仅用于自签名证书</span></span></label>
+              </div>
+            </details>
+
+            <div class="safety-strip">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.5 14 4v4c0 3.4-2.4 5.8-6 6.5-3.6-.7-6-3.1-6-6.5V4l6-2.5Z" stroke="currentColor" stroke-width="1.4"/><path d="m5.6 8 1.7 1.7 3.2-3.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              只动歌单，不动音乐文件 · 数据只在本机与你自己的 NAS 之间传输
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- 步骤 02 ---------- -->
+      <section class="view" id="view-s2" data-view="s2" tabindex="-1">
+        <h2 class="sr-only">选择歌单</h2>
+        <div class="view-head">
+          <button class="btn sm" id="btnPlAll" type="button">全选</button>
+          <span class="chip accent" id="plSummary">未选择</span>
+          <span class="grow"></span>
+          <span class="count" id="plCount">来源：未连接</span>
+        </div>
+        <div class="scroll">
+          <div class="pl-grid" id="plList"></div>
+        </div>
+        <div class="view-foot">
+          <span>涉及曲目 <b class="mono" id="dockSongs">0 首</b></span>
+          <span class="grow"></span>
+          <span>只想同步收藏？走支线 ★，无需选歌单</span>
+        </div>
+      </section>
+
+      <!-- ---------- 步骤 03 ---------- -->
+      <section class="view" id="view-s3" data-view="s3" tabindex="-1">
+        <h2 class="sr-only">歌单匹配结果与导入</h2>
+        <div class="pl-tabs" id="plTabs" role="tablist" aria-label="按歌单切换匹配结果"></div>
+
+        <div class="match-split">
+          <div class="match-main" id="matchPanes"></div>
+
+          <aside class="match-side">
+            <div class="side-block">
+              <div class="cap cap-lg">重名歌单的处理方式</div>
+              <div class="dup-grid">
+                <label class="dup-opt"><input type="radio" name="dupMode" value="append" checked><span class="t">追加到现有歌单</span><span class="d">默认。不动原有歌曲，只把匹配结果加进去。</span></label>
+                <label class="dup-opt"><input type="radio" name="dupMode" value="new"><span class="t">重名自动新建副本</span><span class="d">自动加 (2)、(3) 后缀，两个歌单都保留。</span></label>
+                <label class="dup-opt"><input type="radio" name="dupMode" value="overwrite"><span class="t">删除同名歌单后重建</span><span class="d">清掉同名歌单里的歌曲条目后重建，音频文件不动。</span></label>
+              </div>
+              <div class="risk-note" id="riskNote"><b>明确后果：</b>目标曲库里同名的歌单对象会被删除并重建，原有歌曲条目不再保留；曲库中的音频文件不会被删除、移动或转码。</div>
+            </div>
+
+            <div class="side-block">
+              <div class="cap" id="distCap">匹配分布</div>
+              <div class="dist-row"><span class="k">高置信</span><span class="bar"><i id="distHigh" style="width:0;background:var(--accent)"></i></span><span class="v" id="distHighN">0</span></div>
+              <div class="dist-row"><span class="k">疑似</span><span class="bar"><i id="distMid" style="width:0;background:var(--warn)"></i></span><span class="v" id="distMidN">0</span></div>
+              <div class="dist-row"><span class="k">未匹配</span><span class="bar"><i id="distNone" style="width:0;background:var(--line-strong)"></i></span><span class="v" id="distNoneN">0</span></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ---------- 步骤 04：收藏导入（支线） ---------- -->
+      <section class="view" id="view-s4" data-view="s4" tabindex="-1">
+        <h2 class="sr-only">收藏导入</h2>
+        <div class="view-head">
+          <button class="btn primary" id="btnStarred" type="button">读取收藏并匹配</button>
+          <span class="chip signal" style="margin-left:4px">独立功能 · 无需选歌单</span>
+          <span class="grow"></span>
+          <button class="btn sm" id="btnStarAll" type="button">全选</button>
+          <button class="btn sm" id="btnStarHigh" type="button">仅高置信</button>
+        </div>
+        <div class="star-table-wrap" id="starRoot">
+          <div style="padding:28px 16px;text-align:center;color:var(--muted);font-size:13px">点击上方「读取收藏并匹配」，这里会列出收藏里的曲目</div>
+        </div>
+        <div class="view-foot"><span>读取来源收藏的歌曲、专辑与艺人（展开去重），已收藏的曲目灰显禁用，不会重复写入</span></div>
+      </section>
+
+      <!-- ---------- 导入日志 ---------- -->
+      <section class="view" id="view-s5" data-view="s5" tabindex="-1">
+        <h2 class="sr-only">导入日志</h2>
+        <div class="scroll scroll-log">
+          <div class="log log-full" id="logBox"><span class="dim">尚未开始导入</span></div>
+        </div>
+        <div class="view-foot">
+          <span id="logStatus"></span>
+          <span class="grow"></span>
+          <span>只记录本次会话的导入结果，刷新或重新打开应用后清空</span>
+        </div>
+      </section>
+
+      <!-- ---------- 赞赏支持 ---------- -->
+      <section class="view" id="view-s6" data-view="s6" tabindex="-1">
+        <h2 class="sr-only">赞赏支持</h2>
+        <div class="scroll scroll-tip">
+          <div class="tip-page">
+            <div class="tip-main">
+              <div class="tip-title">喜欢这个小工具？</div>
+              <p class="tip-copy">「音纽」是顺手做的小工具，一直免费、无广告，也不收集你的任何数据。如果它帮你省下了整理歌单的时间，可以扫码请我喝杯咖啡——金额随意，纯自愿；不打赏也完全不影响任何功能，更新照旧。</p>
+              <p class="tip-fine">「音纽」为个人开发的第三方工具，与飞牛（fnOS）官方无隶属、合作或授权关系 · 赞赏纯自愿</p>
+            </div>
+            <div class="tip-code">
+              <img class="tip-qr-lg" id="tipQr" alt="微信赞赏码，用微信扫一扫">
+              <p class="tip-note">请用微信扫一扫 · 感谢支持</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="actionbar">
+      <button class="btn" id="actSecondary" type="button">全选</button>
+      <span class="grow"></span>
+      <span class="hint" id="actHint"></span>
+      <button class="btn primary" id="actPrimary" type="button">保存设置并继续 →</button>
+    </footer>
+  </div>
+</div>
+
+<!-- 导入结果弹窗 -->
+<div class="modal" id="doneModal" hidden>
+  <div class="modal-mask" data-done-close></div>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="doneTitle">
+    <div class="done-icon ok" id="doneIcon">✓</div>
+    <div class="tip-title" id="doneTitle">导入完成</div>
+    <p class="done-copy" id="doneCopy"></p>
+    <div class="done-actions">
+      <button class="btn" id="doneLog" type="button">查看导入日志</button>
+      <button class="btn primary" type="button" data-done-close>知道了</button>
+    </div>
+  </div>
+</div>
+
+<!-- 通用提示/确认弹窗（替代浏览器原生 alert / confirm） -->
+<div class="modal" id="askModal" hidden>
+  <div class="modal-mask" data-ask-cancel></div>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="askTitle">
+    <div class="tip-title" id="askTitle">请确认</div>
+    <p class="done-copy" id="askCopy"></p>
+    <div class="done-actions">
+      <button class="btn" id="askCancel" type="button">取消</button>
+      <button class="btn primary" id="askOk" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
+<script>(function () {
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const all = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+// 统一网关下页面地址是 /app/SyncMusic，接口要带前缀；PC 版为空
+const API_BASE = location.pathname.replace(/\/+$/, "");
+const state = { playlists: [], selIds: new Set(), preview: [], starRows: [], lastImport: null };
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+function setStatus(id, text, cls) {
+  const el = $(id);
+  if (!el) return;
+  el.className = "status-line" + (cls ? " " + cls : "");
+  el.innerHTML = text ? '<i class="led"></i>' + esc(text) : "";
+}
+async function api(path, body) {
+  let resp;
+  try {
+    resp = await fetch(API_BASE + path, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {})
+    });
+  } catch (e) {
+    throw new Error("无法连接工具后端（服务可能未启动）");
+  }
+  let j;
+  try { j = await resp.json(); } catch (e) { throw new Error("后端响应异常（HTTP " + resp.status + "）"); }
+  if (!j.ok) throw new Error(j.error || "请求失败");
+  return j.data;
+}
+
+/* ---------- 主题：auto / light / dark ---------- */
+function applyTheme(pref) {
+  const dark = pref === "dark" || (pref === "auto" && window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  document.documentElement.setAttribute("data-theme-pref", pref);
+  try { localStorage.setItem("synctune-theme", pref); } catch (e) {}
+}
+function cycleTheme() {
+  // 三态循环（跟随系统 → 亮 → 暗），但跳过外观与当前完全相同的状态，
+  // 保证每次点击都有可见变化（否则跟随系统时点一下可能"看起来没反应"）
+  const root = document.documentElement;
+  const pref = root.getAttribute("data-theme-pref") || "auto";
+  const eff = root.getAttribute("data-theme") || "light";
+  const sysDark = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches;
+  const effOf = (p) => (p === "auto" ? (sysDark ? "dark" : "light") : p);
+  const order = ["auto", "light", "dark"];
+  const i = Math.max(0, order.indexOf(pref));
+  for (let s = 1; s <= 3; s++) {
+    const cand = order[(i + s) % 3];
+    if (effOf(cand) !== eff) { applyTheme(cand); return; }
+  }
+  applyTheme(eff === "dark" ? "light" : "dark");
+}
+$("railTheme").addEventListener("click", cycleTheme);
+
+/* ---------- 赞赏页 ---------- */
+$("tipQr").src = API_BASE + "/reward.png";
+$("railTip").addEventListener("click", () => goStep("s6"));
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!doneModal.hidden) doneModal.hidden = true;
+  else if (!askModal.hidden) closeAsk(false);
+});
+
+/* ---------- 导入结果弹窗 ---------- */
+const doneModal = $("doneModal");
+function showDone(title, copyHtml, isOk, withLog) {
+  $("doneTitle").textContent = title;
+  $("doneCopy").innerHTML = copyHtml;
+  $("doneIcon").className = "done-icon " + (isOk ? "ok" : "warn");
+  $("doneIcon").textContent = isOk ? "✓" : "!";
+  $("doneLog").style.display = withLog === false ? "none" : "";
+  doneModal.hidden = false;
+}
+doneModal.addEventListener("click", (e) => {
+  if (e.target.closest("[data-done-close]")) doneModal.hidden = true;
+});
+$("doneLog").addEventListener("click", () => {
+  doneModal.hidden = true;
+  goStep("s5");
+});
+
+/* ---------- 通用提示/确认（替代原生 alert / confirm） ---------- */
+const askModal = $("askModal");
+let askResolve = null;
+function ask(opts) {
+  const o = opts || {};
+  $("askTitle").textContent = o.title || "请确认";
+  $("askCopy").innerHTML = o.copy || "";
+  $("askOk").textContent = o.okText || (o.cancel === false ? "知道了" : "确定");
+  $("askCancel").style.display = o.cancel === false ? "none" : "";
+  askModal.hidden = false;
+  $("askOk").focus();
+  return new Promise((resolve) => { askResolve = resolve; });
+}
+function closeAsk(ok) {
+  askModal.hidden = true;
+  const fn = askResolve;
+  askResolve = null;
+  if (fn) fn(ok);
+}
+$("askOk").addEventListener("click", () => closeAsk(true));
+$("askCancel").addEventListener("click", () => closeAsk(false));
+askModal.addEventListener("click", (e) => {
+  if (e.target.closest("[data-ask-cancel]")) closeAsk(false);
+});
+if (window.matchMedia) {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const onChange = () => {
+    if ((document.documentElement.getAttribute("data-theme-pref") || "auto") === "auto") applyTheme("auto");
+  };
+  if (mq.addEventListener) mq.addEventListener("change", onChange);
+  else if (mq.addListener) mq.addListener(onChange);
+}
+applyTheme(document.documentElement.getAttribute("data-theme-pref") || "auto");
+
+/* ---------- 侧栏收起 / 展开（不做记忆：每次打开都默认展开） ---------- */
+function setRailMini(mini) {
+  document.querySelector(".app").classList.toggle("rail-mini", mini);
+  const btn = $("railToggle");
+  const label = mini ? "展开侧栏" : "收起侧栏";
+  btn.querySelector("span").textContent = label;
+  btn.setAttribute("aria-label", label);
+  btn.setAttribute("title", label);
+}
+$("railToggle").addEventListener("click", () => {
+  setRailMini(!document.querySelector(".app").classList.contains("rail-mini"));
+});
+
+/* ---------- 步骤 ---------- */
+const STEPS = [
+  { id: "s1", num: "01", title: "连接设置", lede: "填两端地址与账号，测试通过后保存。",
+    secondary: "测试两端连接", primary: "保存设置并继续 →" },
+  { id: "s2", num: "02", title: "选择歌单", lede: "从歌曲来源勾选要搬运的歌单。",
+    secondary: "全选", primary: "匹配预览 →" },
+  { id: "s3", num: "03", title: "匹配与导入", lede: "核对每一首的匹配结果，再写入目标曲库。",
+    primary: "开始导入", signal: true },
+  { id: "s5", num: "≡", title: "导入日志", lede: "本次导入的逐条结果与失败原因都记在这里，可随时回看。" },
+  { id: "s4", num: "★", title: "收藏导入", lede: "独立支线，无需选歌单。读取收藏后直接匹配写入。",
+    primary: "开始导入收藏", signal: true },
+  { id: "s6", num: "♥", title: "赞赏支持", lede: "如果这个小工具帮你省下了时间，可以请我喝杯咖啡。" }
+];
+const ORDER = STEPS.map((s) => s.id);
+let current = "s1";
+
+function goStep(id, opts) {
+  const idx = ORDER.indexOf(id);
+  if (idx < 0) return;
+  current = id;
+  const cfg = STEPS[idx];
+  all("#steps .step").forEach((b) => {
+    const i = ORDER.indexOf(b.dataset.target);
+    b.classList.toggle("is-active", b.dataset.target === id);
+    // 只有主线三步（01-03）会标记已完成；收藏支线与导入日志进入时不改动标记，
+    // 避免未做任何事就整排打勾
+    if (id === "s1" || id === "s2" || id === "s3") {
+      b.classList.toggle("is-done", i < idx && b.dataset.target !== "s4");
+    }
+  });
+  const progress = (id === "s1" || id === "s2" || id === "s3") ? idx / 2 : 1;
+  $("steps").style.setProperty("--rail-scale", String(Math.min(1, progress)));
+  $("railTip").classList.toggle("is-active", id === "s6");
+  void 0;
+
+  all(".view").forEach((v) => v.classList.toggle("is-current", v.dataset.view === id));
+  $("stageNum").textContent = cfg.num;
+  $("stageTitle").textContent = cfg.title;
+  $("stageLede").textContent = cfg.lede;
+  $("stageHead").classList.toggle("is-branch", id === "s4");
+  $("stageStats").hidden = id !== "s4";
+
+  const sec = $("actSecondary");
+  sec.textContent = cfg.secondary || "";
+  sec.style.display = cfg.secondary ? "" : "none";
+  const p = $("actPrimary");
+  p.textContent = cfg.primary || "";
+  p.style.display = cfg.primary ? "" : "none";
+  p.className = "btn " + (cfg.signal ? "signal" : "primary");
+  refreshHint();
+  if (!(opts && opts.silent)) {
+    const view = $("view-" + id);
+    try { view.focus({ preventScroll: true }); } catch (e) {}
+  }
+}
+all("#steps .step").forEach((b) => b.addEventListener("click", () => goStep(b.dataset.target)));
+
+function plAllSelected() {
+  return state.playlists.length > 0 &&
+    state.playlists.every((p) => state.selIds.has(p.id));
+}
+function refreshHint() {
+  const hint = $("actHint");
+  if (current === "s1") hint.textContent = "";
+  else if (current === "s2") {
+    const n = state.selIds.size;
+    hint.textContent = n ? "已选 " + n + " 个歌单" : "尚未选择歌单";
+    // 全选按钮兼作取消：全部选中时文案随之切换
+    const label = plAllSelected() ? "取消全选" : "全选";
+    $("btnPlAll").textContent = label;
+    $("actSecondary").textContent = label;
+  } else if (current === "s3") {
+    const total = state.preview.reduce((a, p) => a + p.rows.filter((r) => r.matched).length, 0);
+    const allSongs = state.preview.reduce((a, p) => a + p.rows.length, 0);
+    hint.textContent = state.preview.length ? total + " / " + allSongs + " 首可导入" : "先完成匹配预览";
+  } else if (current === "s5") {
+    const n = $("logBox")._count || 0;
+    hint.textContent = n ? "共 " + n + " 条记录" : "尚未开始导入";
+  } else if (current === "s6") {
+    hint.textContent = "纯自愿 · 不影响任何功能";
+  } else {
+    const n = all("#starRoot .row-check:checked").length;
+    hint.textContent = state.starRows.length ? "已选 " + n + " 首待收藏" : "尚未读取收藏";
+    const boxes = all("#starRoot .row-check").filter((b) => !b.disabled);
+    $("btnStarAll").textContent =
+      boxes.length > 0 && boxes.every((b) => b.checked) ? "取消全选" : "全选";
+  }
+}
+
+/* ---------- 配置 ---------- */
+function fillForm(cfg) {
+  $("ndUrl").value = cfg.navidrome.url;
+  $("ndUser").value = cfg.navidrome.user;
+  $("ndPass").value = "";
+  $("ndPass").placeholder = cfg.navidrome.hasPassword ? "已加密保存，留空则沿用" : "未保存，请填写";
+  $("fnUrl").value = cfg.fnos.url;
+  $("fnUser").value = cfg.fnos.user;
+  $("fnPass").value = "";
+  $("fnPass").placeholder = cfg.fnos.hasPassword ? "已加密保存，留空则沿用" : "未保存，请填写";
+  $("advAuthx").checked = cfg.advanced.useAuthx;
+  $("advTls").checked = cfg.advanced.skipTlsVerify;
+}
+function gatherForm() {
+  return {
+    navidrome: { url: $("ndUrl").value.trim(), user: $("ndUser").value.trim(),
+      password: $("ndPass").value },
+    fnos: { url: $("fnUrl").value.trim(), user: $("fnUser").value.trim(),
+      password: $("fnPass").value },
+    advanced: { useAuthx: $("advAuthx").checked, skipTlsVerify: $("advTls").checked }
+  };
+}
+async function saveConfig() {
+  const cfg = await api("/api/config/save", gatherForm());
+  fillForm(cfg);
+  return cfg;
+}
+
+$("btnNdTest").addEventListener("click", async () => {
+  setStatus("ndStatus", "连接中…", "");
+  try {
+    await saveConfig();
+    const d = await api("/api/navidrome/test");
+    state.playlists = d.playlists;
+    state.selIds = new Set();
+    renderPlaylists();
+    setStatus("ndStatus", "连接成功 · 共 " + d.count + " 个歌单", "ok");
+    $("plCount").textContent = "来源：Navidrome · " + d.count + " 个歌单";
+  } catch (e) {
+    setStatus("ndStatus", e.message, "err");
+  }
+});
+$("btnFnTest").addEventListener("click", async () => {
+  setStatus("fnStatus", "连接中…", "");
+  try {
+    await saveConfig();
+    const d = await api("/api/fnos/test");
+    setStatus("fnStatus", "连接成功 · 曲库 " + d.trackTotal + " 首 · 已有歌单 " + d.playlistTotal + " 个", "ok");
+  } catch (e) {
+    setStatus("fnStatus", e.message, "err");
+  }
+});
+
+/* ---------- 歌单 ---------- */
+function renderPlaylists() {
+  const box = $("plList");
+  if (!state.playlists.length) {
+    box.innerHTML = '<div style="grid-column:1/-1;padding:28px 16px;text-align:center;color:var(--muted);font-size:13px">先在上方「测试连接并读取歌单」，这里会列出歌曲来源的全部歌单</div>';
+    updatePick();
+    return;
+  }
+  box.innerHTML = state.playlists.map((p) => `
+    <label class="pl-item${state.selIds.has(p.id) ? " is-checked" : ""}">
+      <input type="checkbox" data-id="${esc(p.id)}" data-songs="${p.songCount}" ${state.selIds.has(p.id) ? "checked" : ""}>
+      <span class="pl-name">${esc(p.name)}</span>
+      <span class="pl-count">${p.songCount} 首</span>
+    </label>`).join("");
+  all("input", box).forEach((cb) => cb.addEventListener("change", () => {
+    if (cb.checked) state.selIds.add(cb.dataset.id); else state.selIds.delete(cb.dataset.id);
+    updatePick();
+  }));
+  updatePick();
+}
+function updatePick() {
+  all("#plList .pl-item").forEach((label) => {
+    const cb = label.querySelector("input");
+    label.classList.toggle("is-checked", !!(cb && cb.checked));
+  });
+  const picked = all("#plList input:checked");
+  const songs = picked.reduce((n, b) => n + Number(b.dataset.songs || 0), 0);
+  $("plSummary").textContent = picked.length ? "已选 " + picked.length + " / " + state.playlists.length : "未选择";
+  $("dockSongs").textContent = songs + " 首";
+  refreshHint();
+}
+$("btnPlAll").addEventListener("click", () => {
+  // 兼作取消：已全选则清空，否则全选
+  const ids = state.playlists.map((p) => p.id);
+  state.selIds = plAllSelected() ? new Set() : new Set(ids);
+  renderPlaylists();
+});
+
+/* ---------- 匹配预览 ---------- */
+function confHtml(r) {
+  const label = r.level === "high" ? "高置信" : r.level === "mid" ? "疑似" : "未匹配";
+  const num = r.matched ? r.score.toFixed(2).replace(/^0/, "") : "—";
+  return '<div class="conf ' + r.level + '"><span class="num">' + num + '</span>' +
+    '<span class="track"><i style="width:' + Math.round((r.score || 0) * 100) + '%"></i></span>' +
+    '<span class="label">' + label + "</span></div>";
+}
+function rowHtml(r) {
+  const canCheck = r.matched && r.level !== "none";
+  const checked = canCheck && r.level !== "none" && !r.imported;
+  return '<tr' + (canCheck ? "" : ' class="is-off"') + '>' +
+    '<td><input type="checkbox" class="row-check" data-guid="' + esc(r.fnGuid) + '" data-level="' + r.level + '"' +
+    (checked ? " checked" : "") + (canCheck ? "" : " disabled") + "></td>" +
+    '<td><div class="cell-main clip">' + esc(r.navTitle) + '</div><div class="cell-sub">' + esc(r.navArtist) + "</div></td>" +
+    "<td>" + (r.matched
+      ? '<div class="clip">' + esc(r.fnTitle) + '</div><div class="cell-sub">' + esc(r.fnArtist || "—") + "</div>"
+      : '<div class="clip">—</div>') + "</td>" +
+    "<td>" + confHtml(r) +
+    (r.imported ? '<div style="margin-top:5px"><span class="badge dup">已导入</span></div>' : "") +
+    "</td></tr>";
+}
+function renderPreview() {
+  const tabs = $("plTabs");
+  const panes = $("matchPanes");
+  if (!state.preview.length) {
+    tabs.innerHTML = "";
+    panes.innerHTML = '<div style="padding:28px 16px;text-align:center;color:var(--muted);font-size:13px">还没有匹配结果</div>';
+    return;
+  }
+  tabs.innerHTML = state.preview.map((pl, i) =>
+    '<button type="button" class="' + (i === 0 ? "is-active" : "") + '" role="tab" data-pane="pane-' + esc(pl.id) + '">' +
+    esc(pl.name) + ' <span class="tnum">' + pl.matchedCount + "/" + pl.songCount + "</span></button>").join("");
+  panes.innerHTML = state.preview.map((pl, i) => `
+    <div class="pane${i === 0 ? " is-active" : ""}" id="pane-${esc(pl.id)}" role="tabpanel">
+      <div class="rename-row">
+        <span>导入名称</span><input type="text" class="rename" value="${esc(pl.name)}" aria-label="歌单导入名称">
+        <span class="grow" style="flex:1"></span>
+        <button class="btn sm" data-act="all" type="button">全选</button>
+        <button class="btn sm" data-act="high" type="button">仅高置信</button>
+        ${pl.targetExists ? '<span class="chip" title="飞牛音乐里已有同名歌单，标出的歌曲已存在其中">目标已有同名歌单 · ' + pl.targetCount + " 首</span>" : ""}
+        <span class="chip" data-chip></span>
+      </div>
+      <div class="table-scroll">
+        <table class="match">
+          <thead><tr><th></th><th>来源曲目</th><th>匹配到的曲目</th><th>置信度</th></tr></thead>
+          <tbody>${pl.rows.map(rowHtml).join("")}</tbody>
+        </table>
+      </div>
+    </div>`).join("");
+
+  all("#plTabs button").forEach((t) => t.addEventListener("click", () => {
+    all("#plTabs button").forEach((x) => x.classList.remove("is-active"));
+    t.classList.add("is-active");
+    all(".pane", panes).forEach((p) => p.classList.toggle("is-active", p.id === t.dataset.pane));
+  }));
+  all(".pane", panes).forEach((pane) => {
+    const chip = pane.querySelector("[data-chip]");
+    const refresh = () => {
+      const n = all(".row-check:checked", pane).length;
+      if (chip) chip.textContent = n + " 首待导入";
+      const allBtn = pane.querySelector('[data-act="all"]');
+      if (allBtn) {
+        const boxes = all(".row-check", pane).filter((b) => !b.disabled);
+        allBtn.textContent = boxes.length > 0 && boxes.every((b) => b.checked) ? "取消全选" : "全选";
+      }
+      refreshHint();
+    };
+    all(".row-check", pane).forEach((b) => b.addEventListener("change", refresh));
+    all("[data-act]", pane).forEach((btn) => btn.addEventListener("click", () => {
+      if (btn.dataset.act === "all") {
+        // 兼作取消：可勾选行全部选中时再点即清空
+        const boxes = all(".row-check", pane).filter((b) => !b.disabled);
+        const allChecked = boxes.length > 0 && boxes.every((b) => b.checked);
+        boxes.forEach((b) => { b.checked = !allChecked; });
+      } else {
+        all(".row-check", pane).forEach((b) => {
+          if (b.disabled) return;
+          if (btn.dataset.act === "high") b.checked = b.dataset.level === "high";
+        });
+      }
+      refresh();
+    }));
+    refresh();
+  });
+  renderDist();
+}
+function renderDist() {
+  let high = 0, mid = 0, none = 0;
+  state.preview.forEach((pl) => pl.rows.forEach((r) => {
+    if (!r.matched || r.level === "none") none++;
+    else if (r.level === "high") high++;
+    else mid++;
+  }));
+  const total = high + mid + none;
+  $("distCap").textContent = "匹配分布 / " + total + " 首";
+  const set = (id, idN, n) => {
+    $(id).style.width = (total ? Math.round(n / total * 100) : 0) + "%";
+    $(idN).textContent = n;
+  };
+  set("distHigh", "distHighN", high);
+  set("distMid", "distMidN", mid);
+  set("distNone", "distNoneN", none);
+}
+async function doPreview() {
+  if (!state.selIds.size) {
+    await ask({ title: "还没有选歌单", copy: "请先在「选择歌单」里勾选要导入的歌单，再点匹配预览。", cancel: false });
+    return;
+  }
+  const btn = $("actPrimary");
+  btn.disabled = true;
+  try {
+    const d = await api("/api/preview", { ids: [...state.selIds] });
+    state.preview = d.playlists;
+    renderPreview();
+    goStep("s3");
+  } catch (e) { ask({ title: "匹配失败", copy: esc(e.message), cancel: false }); }
+  finally { btn.disabled = false; }
+}
+
+/* ---------- 重名处理 ---------- */
+function dupMode() {
+  const el = document.querySelector('input[name="dupMode"]:checked');
+  return el ? el.value : "append";
+}
+function syncDup() {
+  all('input[name="dupMode"]').forEach((r) => {
+    const opt = r.closest(".dup-opt");
+    opt.classList.toggle("is-checked", r.checked);
+    opt.classList.toggle("is-risk", r.checked && r.value === "overwrite");
+  });
+  $("riskNote").classList.toggle("show", dupMode() === "overwrite");
+}
+all('input[name="dupMode"]').forEach((r) => r.addEventListener("change", syncDup));
+syncDup();
+
+/* ---------- 导入 ---------- */
+function logLine(html) {
+  const box = $("logBox");
+  if (!box._started) { box.innerHTML = ""; box._started = true; box._count = 0; }
+  box.insertAdjacentHTML("beforeend", html + "\n");
+  box._count = (box._count || 0) + 1;
+  box.scrollTop = box.scrollHeight;
+  if (current === "s5") refreshHint();
+}
+async function doImport() {
+  const items = [];
+  state.preview.forEach((pl) => {
+    const pane = $("pane-" + pl.id);
+    if (!pane) return;
+    const name = pane.querySelector(".rename").value.trim();
+    const guids = all(".row-check:checked", pane).map((b) => b.dataset.guid).filter(Boolean);
+    if (name) items.push({ name: name, guids: guids });
+  });
+  if (!items.length) {
+    await ask({ title: "没有可导入的歌曲", copy: "当前表格里没有勾选任何匹配到的曲目，请先在上面勾选。", cancel: false });
+    return;
+  }
+  const totalSongs = items.reduce((a, it) => a + it.guids.length, 0);
+  if (!(await ask({
+    title: "确认导入",
+    copy: "将把 <b>" + items.length + "</b> 个歌单、共 <b>" + totalSongs +
+      "</b> 首曲目写入目标曲库。<br>只动歌单，不会删除或移动任何音频文件。"
+  }))) return;
+
+  const btn = $("actPrimary");
+  const hint = $("actHint");
+  const status = $("logStatus");
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "导入中…";
+  $("logBox")._started = false;
+  let ok = 0, fail = 0;
+  logLine('<span class="dim">[' + new Date().toLocaleTimeString() + "] 开始导入 " + items.length + " 个歌单</span>");
+
+  // 逐个歌单导入，便于显示真实进度
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const prog = (i + 1) + "/" + items.length;
+    hint.textContent = "正在导入 " + prog + "：" + it.name;
+    status.textContent = "导入中 " + prog;
+    logLine('<span class="dim">· 正在导入「' + esc(it.name) + "」（" + prog + "）</span>");
+    try {
+      const d = await api("/api/import", { items: [it], mode: dupMode() });
+      d.log.forEach((x) => {
+        logLine(x.status === "ok"
+          ? '<span class="ok">[成功]</span> ' + esc(x.name) + "：" + esc(x.msg)
+          : '<span class="err">[失败]</span> ' + esc(x.name) + "：" + esc(x.msg));
+        if (x.status === "ok") ok++; else fail++;
+      });
+    } catch (e) {
+      fail++;
+      logLine('<span class="err">[失败]</span> ' + esc(it.name) + "：" + esc(e.message));
+    }
+  }
+
+  logLine('<span class="dim">—— 完成：成功 ' + ok + " 个，失败 " + fail + " 个 ——</span>");
+  hint.textContent = "导入完成：成功 " + ok + " 个，失败 " + fail + " 个";
+  status.textContent = fail ? "完成 · " + fail + " 个失败" : "导入完成";
+  btn.textContent = oldText;
+  btn.disabled = false;
+  showDone(fail ? "导入结束" : "导入完成",
+    "成功导入 <b>" + ok + "</b> 个歌单" + (fail ? "，<b>" + fail + "</b> 个失败" : "") + "。<br>" +
+    (fail ? "失败原因已记录在导入日志里。" : "到目标曲库刷新即可看到新歌单。"),
+    !fail);
+  try {
+    const st = await api("/api/fnos/test");
+    setStatus("fnStatus", "连接成功 · 曲库 " + st.trackTotal + " 首 · 已有歌单 " + st.playlistTotal + " 个", "ok");
+  } catch (e) {}
+}
+
+/* ---------- 收藏 ---------- */
+function starRowHtml(r) {
+  const canCheck = r.matched && !r.alreadyFavorite;
+  const level = r.matched ? r.level : "none";
+  const stateHtml = r.alreadyFavorite
+    ? '<span class="badge dup">已收藏 · 跳过</span>'
+    : (r.matched ? confHtml(r) : '<span class="badge none">未匹配</span>');
+  return "<tr" + (canCheck ? "" : ' class="is-off"') + ">" +
+    '<td><input type="checkbox" class="row-check" data-guid="' + esc(r.fnGuid) + '" data-level="' + level + '"' +
+    (canCheck ? " checked" : " disabled") + "></td>" +
+    '<td><div class="cell-main clip">' + esc(r.navTitle) + '</div><div class="cell-sub">' +
+    esc((r.source ? r.source + " · " : "") + r.navArtist) + "</div></td>" +
+    "<td>" + (r.matched
+      ? '<div class="clip">' + esc(r.fnTitle) + '</div><div class="cell-sub">' + esc(r.fnArtist || "—") + "</div>"
+      : '<div class="clip">—</div>') + "</td>" +
+    "<td>" + stateHtml + "</td></tr>";
+}
+function renderStarred(d) {
+  const root = $("starRoot");
+  if (!state.starRows.length) {
+    root.innerHTML = '<div style="padding:28px 16px;text-align:center;color:var(--muted);font-size:13px">来源里没有收藏的歌曲、专辑或艺人</div>';
+    refreshHint();
+    return;
+  }
+  root.innerHTML = '<div class="table-scroll"><table class="match">' +
+    "<thead><tr><th></th><th>来源收藏</th><th>匹配到的曲目</th><th>状态</th></tr></thead>" +
+    "<tbody>" + state.starRows.map(starRowHtml).join("") + "</tbody></table></div>";
+  all("#starRoot .row-check").forEach((b) => b.addEventListener("change", refreshHint));
+  $("statAdded").textContent = "0";
+  $("statSkipped").textContent = d ? d.already : 0;
+  $("statFail").textContent = "0";
+  refreshHint();
+}
+async function loadStarred() {
+  const btn = $("btnStarred");
+  btn.disabled = true;
+  btn.textContent = "读取中…";
+  try {
+    const d = await api("/api/starred");
+    state.starRows = d.rows;
+    renderStarred(d);
+  } catch (e) { ask({ title: "读取收藏失败", copy: esc(e.message), cancel: false }); }
+  finally { btn.disabled = false; btn.textContent = "读取收藏并匹配"; }
+}
+async function doStarImport() {
+  const guids = all("#starRoot .row-check:checked").map((b) => b.dataset.guid).filter(Boolean);
+  if (!guids.length) {
+    await ask({ title: "没有勾选歌曲", copy: "请在列表里勾选要加入收藏的曲目。", cancel: false });
+    return;
+  }
+  if (!(await ask({
+    title: "确认加入收藏",
+    copy: "将把 <b>" + guids.length + "</b> 首歌标记为收藏。已收藏的曲目会自动跳过。"
+  }))) return;
+  const btn = $("actPrimary");
+  btn.disabled = true;
+  try {
+    const d = await api("/api/favorite/import", { guids: guids });
+    $("statAdded").textContent = d.added;
+    $("statSkipped").textContent = d.skipped;
+    $("statFail").textContent = d.fail;
+    const errs = (d.errors && d.errors.length)
+      ? '<span class="err-list">' + d.errors.slice(0, 3).map(esc).join("<br>") +
+        (d.errors.length > 3 ? "<br>…" : "") + "</span>"
+      : "";
+    showDone(d.fail ? "收藏导入结束" : "收藏导入完成",
+      "新增收藏 <b>" + d.added + "</b> 首，已收藏跳过 <b>" + d.skipped + "</b> 首" +
+      (d.fail ? "，失败 <b>" + d.fail + "</b> 首" : "") + "。" + errs,
+      !d.fail, false);
+    await loadStarred();
+  } catch (e) { ask({ title: "导入收藏失败", copy: esc(e.message), cancel: false }); }
+  finally { btn.disabled = false; }
+}
+$("btnStarred").addEventListener("click", loadStarred);
+$("btnStarAll").addEventListener("click", () => {
+  const boxes = all("#starRoot .row-check").filter((b) => !b.disabled);
+  // 兼作取消：可勾选行全部选中时再点即清空
+  const allChecked = boxes.length > 0 && boxes.every((b) => b.checked);
+  boxes.forEach((b) => { b.checked = !allChecked; });
+  refreshHint();
+});
+$("btnStarHigh").addEventListener("click", () => {
+  all("#starRoot .row-check").forEach((b) => { if (!b.disabled) b.checked = b.dataset.level === "high"; });
+  refreshHint();
+});
+
+/* ---------- 底部操作条 ---------- */
+$("actSecondary").addEventListener("click", async () => {
+  if (current === "s1") {
+    await $("btnNdTest").click();
+    await $("btnFnTest").click();
+  } else if (current === "s2") {
+    $("btnPlAll").click();
+  }
+});
+$("actPrimary").addEventListener("click", async () => {
+  if (current === "s1") {
+    try { await saveConfig(); goStep("s2"); }
+    catch (e) { setStatus("ndStatus", "保存失败：" + e.message, "err"); }
+  } else if (current === "s2") {
+    doPreview();
+  } else if (current === "s3") {
+    doImport();
+  } else {
+    doStarImport();
+  }
+});
+
+/* ---------- 初始化 ---------- */
+(async function init() {
+  goStep("s1", { silent: true });
+  try {
+    const cfg = await api("/api/config/load");
+    fillForm(cfg);
+  } catch (e) {
+    setStatus("ndStatus", "读取配置失败：" + e.message, "err");
+  }
+})();
+})();
+</script>
+</body>
+</html>

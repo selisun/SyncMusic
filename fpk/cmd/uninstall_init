@@ -1,0 +1,5 @@
+#!/bin/bash
+# 卸载前准备：确保应用进程已退出，避免残留进程导致系统清理中止
+pkill -f 'app/SyncTune/app.py' 2>/dev/null || true
+# 卸载时不删除数据目录（TRIM_PKGVAR），保留用户配置，重装后仍可用
+exit 0

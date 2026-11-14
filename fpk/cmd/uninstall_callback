@@ -1,0 +1,12 @@
+#!/bin/bash
+# 卸载后回调：按卸载向导的选择处理数据
+# keep_data=yes（默认）：保留数据目录，重装后配置复用
+# keep_data=no：彻底删除数据目录内容与运行日志
+KEEP_DATA="${keep_data:-yes}"
+if [ "$KEEP_DATA" = "no" ]; then
+  if [ -n "$TRIM_PKGVAR" ] && [ -d "$TRIM_PKGVAR" ] && [ "$TRIM_PKGVAR" != "/" ]; then
+    rm -rf "$TRIM_PKGVAR"/* "$TRIM_PKGVAR"/.[!.]* 2>/dev/null
+  fi
+  rm -f /var/log/apps/SyncMusic.log 2>/dev/null
+fi
+exit 0

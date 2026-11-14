@@ -1,0 +1,15 @@
+{
+    ".url": {
+        "SyncMusic.Application": {
+            "title": "音纽",
+            "desc": "把 Navidrome 歌单导入飞牛音乐",
+            "icon": "images/icon_{0}.png",
+            "type": "iframe",
+            "protocol": "",
+            "gatewayPrefix": "/app/SyncMusic",
+            "gatewaySocket": "app.sock",
+            "url": "/app/SyncMusic",
+            "allUsers": true
+        }
+    }
+}

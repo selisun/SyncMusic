@@ -1,0 +1,17 @@
+appname               = SyncMusic
+version               = 0.1.0
+display_name          = 音纽
+desc                  = 把歌单按「标题 + 歌手」模糊匹配后导入目标曲库，只动歌单、不动音乐文件。支持匹配预览、批量勾选与已导入标记。纯 Python 标准库实现，无需额外依赖。
+platform              = x86
+source                = thirdparty
+category              = system
+maintainer            = 蓝胖纸
+maintainer_url        = https://blog.mzl.cc
+distributor           = 蓝胖纸
+distributor_url       = https://blog.mzl.cc
+desktop_uidir         = ui
+desktop_applaunchname = SyncMusic.Application
+service_port          = 8879
+checkport             = false
+ctl_stop              = true
+changelog             = 0.1.0：首个公开版本。歌单按「标题 + 歌手」匹配导入、收藏导入、匹配预览与置信度分级、重名歌单三种处理方式、导入日志、导入结果弹窗、明暗主题、密码加密保存、赞赏支持（纯自愿）。只动歌单，不动音乐文件。
