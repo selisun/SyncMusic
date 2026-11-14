@@ -64,8 +64,8 @@ fpk/
 - **看运行日志**：`/var/packages/SyncTune/var/server.log`
 - **从旧包 navidrome2fnos 迁移**：卸载旧包后，其配置在 `/var/packages/navidrome2fnos/var/config.json`，可拷到 `/var/packages/SyncTune/var/` 复用（或重新填写）
 - **卸载**：应用中心卸载；用户配置保留在数据目录，重装后无需重填
-- **ARM 机器**：把 `manifest` 的 `platform = x86` 改为 `platform = arm` 再打包
-- **端口被占用**：`manifest` 的 `service_port`、`config/resource` 与 `app/ui/config` 里的 `port` 三处一起改（如 8879 → 8880）
+- **ARM 机器**：`manifest` 已是 `platform = all`。本项目不含任何架构相关二进制（纯 Python 标准库 + 静态页面），官方文档规定这种包应声明 `all` 以同时支持 x86 与 ARM；只有像 `arm` 那样限定单架构才需要改
+- **端口被占用**：本项目只走网关 socket，不占用任何端口，正常不会遇到；若将来改回端口服务，需同时在 `manifest` 的 `service_port`、`config/resource` 与 `app/ui/config` 的 `port` 三处一起改（如 8879 → 8880）
 - **桌面图标没刷新**：SSH 执行 `systemctl restart trim_app_center.service`
 
 ## 六、关于「上架飞牛应用中心」
