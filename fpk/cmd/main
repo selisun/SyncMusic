@@ -35,12 +35,13 @@ case "${1:-}" in
       mv -f "$LOG_FILE" "$LOG_FILE.1"
     fi
     cd "$APP_DIR"
-    # 访问入口只有统一网关：监听 ${TRIM_APPDEST}/app.sock，由 fnOS 校验登录态后转发。
-    # 另外仅在 127.0.0.1 上监听 service_port 供应用中心做状态探测，不对局域网暴露。
+    # 唯一访问入口是统一网关：监听 ${TRIM_APPDEST}/app.sock，由 fnOS 校验登录态后转发。
+    # 不再额外监听 TCP 端口（manifest 中 checkport = false，系统不做端口探测），
+    # 避免出现第二个无鉴权的 API 入口。
     if [ -n "${TRIM_APPDEST:-}" ]; then
-      LAUNCH_ARGS="--unix-socket ${TRIM_APPDEST}/app.sock --base-path /app/SyncMusic --host 127.0.0.1 --port $PORT"
+      LAUNCH_ARGS="--unix-socket ${TRIM_APPDEST}/app.sock --base-path /app/SyncMusic"
     else
-      LAUNCH_ARGS="--host 0.0.0.0 --port $PORT"
+      LAUNCH_ARGS="--host 127.0.0.1 --port $PORT"
     fi
     nohup python3 "$APP_DIR/app.py" $LAUNCH_ARGS --data-dir "$DATA_DIR" --no-browser \
       >> "$LOG_FILE" 2>&1 &

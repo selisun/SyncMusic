@@ -1082,6 +1082,37 @@ else:  # Windows 等不支持 AF_UNIX 的平台上没有该类型，PC 版走端
     ThreadingUnixHTTPServer = None
 
 
+class HealthHandler(http.server.BaseHTTPRequestHandler):
+    """仅供本机端口探测使用：任何路径都只回一个 ok，不暴露任何 API。
+
+    fpk 模式下真正的对外入口是统一网关 socket；这个 TCP 监听只用于
+    应用中心/系统探测进程是否存活，因此不能挂载完整路由。
+    """
+
+    def do_GET(self):
+        self._ok()
+
+    def do_HEAD(self):
+        self._ok()
+
+    def do_POST(self):
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _ok(self):
+        body = b"ok"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, fmt, *args):
+        pass
+
+
 def _parse_args(argv):
     """解析 --port N / --host H / --unix-socket P / --base-path P / --no-browser。"""
     args = {"no_browser": False}
@@ -1130,11 +1161,13 @@ def main():
             sys.exit(1)
 
     tcp = None
+    # 有网关 socket 时，TCP 端口只做存活探测，不挂载 API（避免第二个免鉴权入口）
+    tcp_handler = HealthHandler if unix_path else Handler
     if args.get("port") or not unix_path:
         if args.get("port"):
             # 指定了固定端口：只试这一个，失败直接退出
             try:
-                tcp = http.server.ThreadingHTTPServer((host, port), Handler)
+                tcp = http.server.ThreadingHTTPServer((host, port), tcp_handler)
             except OSError as e:
                 print("端口 %d 启动失败：%s" % (port, e))
                 if not unix_path:
@@ -1142,7 +1175,7 @@ def main():
         else:
             for p in range(port, port + 11):
                 try:
-                    tcp = http.server.ThreadingHTTPServer((host, p), Handler)
+                    tcp = http.server.ThreadingHTTPServer((host, p), tcp_handler)
                     port = p
                     break
                 except OSError:
