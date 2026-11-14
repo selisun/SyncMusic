@@ -1,10 +1,14 @@
-# 音纽 · SyncMusic
+<p align="center">
+  <img src="fpk/ICON_256.PNG" width="120" alt="音纽">
+</p>
 
-把 **Navidrome**（或任何兼容 Subsonic 协议的服务）里的歌单与收藏，按「标题 + 歌手」模糊匹配后导入 **飞牛音乐（fnOS）**。
+<h1 align="center">音纽 · SyncMusic</h1>
 
-**只动歌单，不动音乐文件** —— 不删除、不移动、不转码任何音频。
+<p align="center">把 <b>Navidrome</b>（或任何兼容 Subsonic 协议的服务）里的歌单与收藏，按「标题 + 歌手」模糊匹配后导入 <b>飞牛音乐（fnOS）</b>。</p>
 
-![version](https://img.shields.io/badge/version-0.1.0-blue)
+<p align="center"><b>只动歌单，不动音乐文件</b> —— 不删除、不移动、不转码任何音频。</p>
+
+<p align="center"><img src="https://img.shields.io/badge/version-0.1.0-blue" alt="version"></p>
 
 ---
 
@@ -81,4 +85,14 @@ fnpack build          # 产物为 SyncMusic.fpk
 
 本项目为**个人开发的第三方工具**，不是飞牛（fnOS）官方产品，与飞牛官方及其关联公司无隶属、合作或授权关系，也不代表官方立场。文中「飞牛」「飞牛音乐」「fnOS」等名称仅用于说明兼容对象，相关商标归其权利人所有。
 
-工具依赖飞牛音乐现有接口，官方调整接口后可能失效，使用风险由使用者自行承担。赞赏完全自愿，与功能使用和更新无关。
+工具依赖飞牛音乐现有接口，官方调整接口后可能失效，使用风险由使用者自行承担。
+
+## 赞赏
+
+如果这个小工具帮你省下了整理歌单的时间，可以扫码请我喝杯咖啡——金额随意，纯自愿；不打赏也完全不影响任何功能，更新照旧。
+
+<p align="center">
+  <img src="web/reward.png" width="240" alt="微信赞赏码">
+</p>
+
+<p align="center">请用微信扫一扫 · 感谢支持</p>
