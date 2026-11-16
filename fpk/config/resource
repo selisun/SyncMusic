@@ -1,8 +1,1 @@
-{
-    "type": "iframe",
-    "protocol": "",
-    "gatewayPrefix": "/app/SyncMusic",
-    "gatewaySocket": "app.sock",
-    "url": "/app/SyncMusic",
-    "allUsers": true
-}
+{}

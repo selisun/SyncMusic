@@ -7,6 +7,5 @@ if [ "$KEEP_DATA" = "no" ]; then
   if [ -n "$TRIM_PKGVAR" ] && [ -d "$TRIM_PKGVAR" ] && [ "$TRIM_PKGVAR" != "/" ]; then
     rm -rf "$TRIM_PKGVAR"/* "$TRIM_PKGVAR"/.[!.]* 2>/dev/null
   fi
-  rm -f /var/log/apps/SyncMusic.log 2>/dev/null
 fi
 exit 0

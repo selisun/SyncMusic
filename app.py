@@ -971,6 +971,9 @@ ROUTES = {
     "/api/logout": api_logout,
 }
 
+# 会修改连接配置或写入飞牛音乐的接口：网关模式下仅管理员可用
+ADMIN_ROUTES = ("/api/config/save", "/api/favorite/import", "/api/import")
+
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -1054,6 +1057,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except ValueError:
             self._send_json({"ok": False, "error": "请求体不是合法 JSON"})
             return
+        # 网关会带 X-Trim-Isadmin 转发用户身份；PC 版无该头，保持原有行为
+        if path in ADMIN_ROUTES:
+            is_admin = self.headers.get("X-Trim-Isadmin")
+            if is_admin is not None and is_admin.strip().lower() != "true":
+                self._send_json({"ok": False, "error": "仅管理员可执行该操作"}, 403)
+                return
         try:
             result = func(payload)
             self._send_json({"ok": True, "data": result})
