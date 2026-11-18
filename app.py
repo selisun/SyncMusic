@@ -48,8 +48,8 @@ WEB_ASSETS = {
 BASE_PATH = ""
 
 DEFAULT_CONFIG = {
-    "navidrome": {"url": "", "user": "", "password": ""},
-    "fnos": {"url": "", "user": "", "password": ""},
+    "navidrome": {"url": "", "user": "", "password": "", "remember": False},
+    "fnos": {"url": "", "user": "", "password": "", "remember": False},
     "deviceId": uuid.uuid4().hex,
     "advanced": {
         "port": 8787,
@@ -160,6 +160,10 @@ def load_config():
                     cfg[sec]["password"] = decrypt_secret(raw)
                     if raw and not raw.startswith(SECRET_PREFIX):
                         plain_found = True
+                    # 兼容 0.1.5 及更早的配置：老版本密码总是落盘，视为已勾选「记住密码」，
+                    # 否则首次保存会把原有密码清空
+                    if raw and "remember" not in sec_saved:
+                        cfg[sec]["remember"] = True
             if isinstance(saved.get("advanced"), dict):
                 cfg["advanced"].update({k: v for k, v in saved["advanced"].items() if k in cfg["advanced"]})
             if saved.get("deviceId"):
@@ -176,10 +180,11 @@ def load_config():
 
 
 def save_config(cfg):
-    """密码统一加密后落盘，任何时候都不写明文。"""
+    """勾「记住密码」时密码加密落盘；不勾则磁盘密码写空（凭据只留在内存）。"""
     disk = json.loads(json.dumps(cfg))
     for sec in ("navidrome", "fnos"):
-        disk[sec]["password"] = encrypt_secret(cfg[sec].get("password") or "")
+        disk[sec]["password"] = (encrypt_secret(cfg[sec].get("password") or "")
+                                 if cfg[sec].get("remember") else "")
     with CONFIG_LOCK:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(disk, f, ensure_ascii=False, indent=2)
@@ -193,11 +198,13 @@ def config_public(cfg):
             "url": cfg["navidrome"]["url"],
             "user": cfg["navidrome"]["user"],
             "hasPassword": bool(cfg["navidrome"]["password"]),
+            "remember": bool(cfg["navidrome"].get("remember")),
         },
         "fnos": {
             "url": cfg["fnos"]["url"],
             "user": cfg["fnos"]["user"],
             "hasPassword": bool(cfg["fnos"]["password"]),
+            "remember": bool(cfg["fnos"].get("remember")),
         },
         "advanced": cfg["advanced"],
     }
@@ -214,6 +221,7 @@ def merge_config(cfg, payload):
         cfg[sec]["user"] = (data.get("user") or "").strip()
         if data.get("password"):
             cfg[sec]["password"] = data["password"]
+        cfg[sec]["remember"] = bool(data.get("remember"))
     adv = payload.get("advanced") or {}
     for k in ("useAuthx", "skipTlsVerify"):
         if k in adv:
@@ -791,29 +799,45 @@ def get_subsonic(cfg):
 # Web 服务
 # --------------------------------------------------------------------------
 
+def apply_creds(cfg, payload):
+    """把前端随请求带来的连接凭据合并进内存配置。
+
+    勾「记住密码」时密码由 config/save 加密落盘；不勾时凭据只存在于
+    本次请求的内存配置里（会话缓存仍按 url+user+密码哈希生效），不写磁盘。
+    """
+    creds = (payload or {}).get("creds") or {}
+    for sec in ("navidrome", "fnos"):
+        data = creds.get(sec) or {}
+        for k in ("url", "user", "password"):
+            v = data.get(k)
+            if v:
+                cfg[sec][k] = str(v).strip()
+    return cfg
+
+
 def api_config_load(payload):
     cfg = load_config()
     return config_public(cfg)
 
 
 def api_config_save(payload):
-    cfg = load_config()
+    cfg = apply_creds(load_config(), payload)
     cfg = merge_config(cfg, payload)
-    # 密码加密落盘，重启后无需重新输入
+    # 勾「记住密码」才加密落盘；不勾则磁盘上的密码清空，凭据只留在内存
     save_config(cfg)
     invalidate_fnos_cache()
     return config_public(cfg)
 
 
 def api_navidrome_test(payload):
-    cfg = load_config()
+    cfg = apply_creds(load_config(), payload)
     cli = get_subsonic(cfg)
     playlists = cli.get_playlists()
     return {"ok": True, "playlists": playlists, "count": len(playlists)}
 
 
 def api_fnos_test(payload):
-    cfg = load_config()
+    cfg = apply_creds(load_config(), payload)
     client = get_fnos_session(cfg)
     stats = client.library_stats()
     return {"ok": True, **stats}
@@ -824,7 +848,7 @@ def api_preview(payload):
     ids = payload.get("ids") or []
     if not ids:
         raise ToolError("请先选择要导入的歌单")
-    cfg = load_config()
+    cfg = apply_creds(load_config(), payload)
     sub = get_subsonic(cfg)
     fnos = get_fnos_session(cfg)
     library = get_fnos_library(cfg, fnos)
@@ -861,7 +885,7 @@ def api_import(payload):
     mode = payload.get("mode") or "append"
     if not items:
         raise ToolError("没有可导入的内容")
-    cfg = load_config()
+    cfg = apply_creds(load_config(), payload)
     fnos = get_fnos_session(cfg)
     existing = {p["name"]: p["guid"] for p in fnos.playlist_list()}
     log = []
@@ -906,7 +930,7 @@ def api_import(payload):
 
 def api_starred(payload):
     """拉取 Navidrome 收藏歌曲并在飞牛曲库中匹配。"""
-    cfg = load_config()
+    cfg = apply_creds(load_config(), payload)
     sub = get_subsonic(cfg)
     fnos = get_fnos_session(cfg)
     library = get_fnos_library(cfg, fnos)
@@ -937,7 +961,7 @@ def api_favorite_import(payload):
             guids.append(g)
     if not guids:
         raise ToolError("没有可导入的收藏曲目")
-    cfg = load_config()
+    cfg = apply_creds(load_config(), payload)
     fnos = get_fnos_session(cfg)
     existing = fnos.favorite_tracks()
     added = skipped = 0
