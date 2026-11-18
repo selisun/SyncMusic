@@ -4,11 +4,11 @@
 
 <h1 align="center">音纽 · SyncMusic</h1>
 
-<p align="center">把 <b>Navidrome</b>（或任何兼容 Subsonic 协议的服务）里的歌单与收藏，按「标题 + 歌手」模糊匹配后导入 <b>飞牛音乐（fnOS）</b>。</p>
+<p align="center">把 <b>Navidrome</b>（或任何兼容 Subsonic 协议的服务）里的歌单与收藏，按「标题 + 歌手」模糊匹配后导入 <b>飞牛音乐</b>。</p>
 
 <p align="center"><b>只动歌单，不动音乐文件</b> —— 不删除、不移动、不转码任何音频。</p>
 
-<p align="center"><img src="https://img.shields.io/badge/version-0.1.8-blue" alt="version"></p>
+<p align="center"><img src="https://img.shields.io/badge/version-0.1.9-blue" alt="version"></p>
 
 ---
 
@@ -20,6 +20,8 @@
 
 1. 读取来源歌单 → 在目标曲库找到同一首歌 → 在目标端创建同名歌单
 2. 读取来源收藏（歌曲 / 专辑 / 艺人）→ 在目标端标红心
+
+> 飞牛音乐是 fnOS 上的音乐应用，本工具调用的是它自己的 `/music/api/v1` 接口（登录、曲库、歌单、收藏），不涉及 fnOS 系统接口。
 
 ## 功能
 
@@ -36,7 +38,7 @@
 
 ## 安装
 
-下载 Release 里的 `SyncMusic_0.1.8.fpk`，在飞牛网页桌面「**应用中心 → 右上角菜单 → 手动安装**」上传，安装完成后桌面出现「音纽」图标。
+下载 Release 里的 `SyncMusic_0.1.9.fpk`，在飞牛网页桌面「**应用中心 → 右上角菜单 → 手动安装**」上传，安装完成后桌面出现「音纽」图标。
 
 ## 使用
 
